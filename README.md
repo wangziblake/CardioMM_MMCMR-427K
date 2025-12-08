@@ -22,7 +22,9 @@ The preprint paper can be seen at (coming soon ...).
 
 Email: Zi Wang (zi.wang@imperial.ac.uk); Chengyan Wang (wangcy@fudan.edu.cn) 
 
+
 ## MMCMR-427K database (still under construction ...)
+
 
 ## CardioMM framework (still under construction ...)
 The training and testing codes of CardioMM are released here.
@@ -59,3 +61,7 @@ If you want to use the database and codes, please cite the following paper:
 
 Zi Wang et al., A Generalist Foundation Model and Database for Accelerated Multimodal Cardiovascular Image Reconstruction and Analysis
 , arXiv preprint, 2025.
+
+
+## Acknowledgement
+The authors thank Drs. Jure Zbontar, Anuroop Sriram, and Bingyu Xin, Ilya Sutskever, Fabian Isensee, Devran Ugurlu for sharing their codes online. 
