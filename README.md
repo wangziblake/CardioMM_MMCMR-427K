@@ -41,7 +41,7 @@ Run the main code for testing:
 xxx.py
 ```
 
-Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning==1.9.0
+Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning=1.9.0
 
 Implementation tips: If you want to test on your own collected data, they should be stored in the same format as the data we provided.
 
