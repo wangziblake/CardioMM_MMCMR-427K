@@ -19,10 +19,6 @@
 
 ***Outlook:*** We anticipate that **CardioMM will become a foundational component of next-generation CMR workflows, enabling fast, consistent, and clinically accessible image reconstruction and analysis across heterogeneous imaging environments**. More broadly, this study outlines a clear direction for developing clinically deployable and reliable reconstruction foundation models, charting a decisive step toward the real-world integration of generalist models in medical imaging.
 
-![MMCMR-427K](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/MMCMR-427K.png)
-
-![CardioMM](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/CardioMM.png)
-
 The preprint paper can be seen at (coming soon ...).
 
 Email: Zi Wang (zi.wang@imperial.ac.uk); Chengyan Wang (wangcy@fudan.edu.cn) 
