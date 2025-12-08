@@ -64,4 +64,4 @@ Zi Wang et al., A Generalist Foundation Model and Database for Accelerated Multi
 
 
 ## Acknowledgement
-The authors thank Drs. Jure Zbontar, Anuroop Sriram, and Bingyu Xin, Ilya Sutskever, Fabian Isensee, Devran Ugurlu for sharing their codes online. 
+The authors thank Drs. Jure Zbontar, Anuroop Sriram, Bingyu Xin, Ilya Sutskever, Fabian Isensee, and Devran Ugurlu for sharing their codes online. 
