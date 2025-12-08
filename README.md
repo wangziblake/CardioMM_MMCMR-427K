@@ -22,7 +22,9 @@ The preprint paper can be seen at (coming soon ...).
 
 Email: Zi Wang (zi.wang@imperial.ac.uk); Chengyan Wang (wangcy@fudan.edu.cn) 
 
-## Codes of CardioMM
+## MMCMR-427K database (still under construction ...)
+
+## CardioMM framework (still under construction ...)
 The training and testing codes of CardioMM are released here.
 
 Install conda environment:
