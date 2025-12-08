@@ -15,14 +15,11 @@ This work provides the first evidence that a generalist reconstruction foundatio
 ![MMCMR-427K](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/MMCMR-427K.png)
 ![CardioMM](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/CardioMM.png)
 
-The preprint paper can be seen at (Coming soon ...).
+The preprint paper can be seen at (coming soon ...).
 
-Email: Chengyan Wang (wangcy@fudan.edu.cn) 
-CC: Zi Wang (zi.wang@imperial.ac.uk)
+Email: Zi Wang (zi.wang@imperial.ac.uk); Chengyan Wang (wangcy@fudan.edu.cn) 
 
-## MMCMR-427K database (still under construction ...)
-
-## CardioMM framework (still under construction ...)
+## Codes of CardioMM
 The training and testing codes of CardioMM are released here.
 
 Install conda environment:
@@ -53,7 +50,7 @@ Note: The software is used for testing only, and cannot be used commercially.
 
 
 ## Citation
-If you want to use the code, please cite the following paper:
+If you want to use the database and codes, please cite the following paper:
 
 Zi Wang et al., A Generalist Foundation Model and Database for Accelerated Multimodal Cardiovascular Image Reconstruction and Analysis
 , arXiv preprint, 2025.
