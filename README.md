@@ -25,9 +25,9 @@ Email: Dr. Zi Wang (zi.wang@imperial.ac.uk); Dr. Chengyan Wang (wangcy@fudan.edu
 
 
 ## MMCMR-427K database (still under construction ...)
-Data availability: All used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
+Most of the real-world CMR datasets from our collection are publicly available now. A small portion of real-world CMR datasets cannot be fully released publicly due to data agreements and privacy regulations and may be requested from the last corresponding author upon reasonable inquiry.
 
-Besides, most of the real-world CMR datasets from our collection are publicly available now. A small portion of real-world CMR datasets cannot be fully released publicly due to data agreements and privacy regulations and may be requested from the last corresponding author upon reasonable inquiry.
+All used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
 ## CardioMM framework (still under construction ...)
 The training and testing codes of CardioMM are released here.
