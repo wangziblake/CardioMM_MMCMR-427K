@@ -7,9 +7,9 @@
 
 ***Model:*** Leveraging this unprecedented infrastructure, we propose **CardioMM, the first generalist reconstruction foundation model capable of dynamically adapting to heterogeneous highly accelerated CMR scenarios**. CardioMM unifies semantic contextual understanding with physics-informed data consistency to deliver robust reconstructions across varied scanners, protocols, and patient presentations. It establishes a foundation for scalable, generalizable, and high-throughput multimodal cardiovascular imaging.
 
-![CardioMM](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/CardioMM.png)
-
 ***Validation:*** Comprehensive evaluations demonstrate that CardioMM achieves state-of-the-art performance in the internal centers and **exhibits strong zero-shot generalization to unseen external settings**. For clinical applicability, **highly accelerated reconstructions (8×–24×) reliably preserve 11 key cardiac phenotypes, three quantitative myocardial biomarkers, and diagnostic image quality**, ensuring dependable diagnostic support for medical professionals.
+
+![CardioMM](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/CardioMM.png)
 
 ***Complementarity:*** Notably, **our framework does not compete with existing CMR analytical foundation models** that operate on post-reconstruction images; rather, **it complements them by filling a critical upstream gap in the multimodal CMR computational pipeline**. By delivering higher-quality and more diverse image reconstructions, CardioMM provides a more robust and reliable foundation for downstream segmentation, phenotyping, diagnosis, and beyond.
 
