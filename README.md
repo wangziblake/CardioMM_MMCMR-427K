@@ -30,7 +30,7 @@ Most of the real-world CMR datasets from our collection are publicly available n
 All used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
 ## CardioMM framework (still under construction ...)
-The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, We also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this framework, including both parallel imaging and compressed sensing approaches.
+The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, We also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this pipeline, including both parallel imaging and compressed sensing approaches.
 
 Install conda environment, see:
 ```
@@ -38,15 +38,23 @@ Environment_install.txt
 ```
 Run the main code for training subset re-organization, follow:
 ```
-preparescript_CMRxReconAll.sh
+/CardioMM_reconstruction/preparescript_CMRxReconAll.sh
+```
+Run the main code for testing subset undersampling, run:
+```matlab
+/CardioMM_dataundersampling/MaskGeneration_TestAnalysisSet_Fast.m
 ```
 Run the main code for training, follow:
 ```
-trainscript_CMRxReconAll.sh
+/CardioMM_reconstruction/trainscript_CMRxReconAll.sh
 ```
-Run the main code for testing, follow:
-```python
-xxx.py
+Run the main code for reconstruction, follow:
+```
+/CardioMM_reconstruction/reconscript_CMRxReconAll.sh
+```
+Run the main code for evaluation and visualization, follow:
+```
+/CardioMM_reconstruction/evaluatescript_CMRxReconAll.sh
 ```
 
 Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning=1.9.0
