@@ -40,8 +40,8 @@ Run the main code for training subset re-organization, follow:
 ```
 /CardioMM_reconstruction/preparescript_CMRxReconAll.sh
 ```
-Run the main code for testing subset undersampling, run:
-```matlab
+Run the main code for testing subset undersampling, run matlab script:
+```
 /CardioMM_dataundersampling/MaskGeneration_TestAnalysisSet_Fast.m
 ```
 Run the main code for training, follow:
@@ -55,6 +55,10 @@ Run the main code for reconstruction, follow:
 Run the main code for evaluation and visualization, follow:
 ```
 /CardioMM_reconstruction/evaluatescript_CMRxReconAll.sh
+```
+Run the main code for automated analysis, see python scripts in:
+```
+/CardioMM_automatedphenotyping
 ```
 
 Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning=1.9.0
