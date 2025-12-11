@@ -30,7 +30,7 @@ Most of the real-world CMR datasets from our collection are publicly available n
 All used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
 ## CardioMM framework (still under construction ...)
-The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. We also include the codes of conventional method SENSE here!
+The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, We also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this framework, including both parallel imaging and compressed sensing approaches.
 
 Install conda environment, see:
 ```
