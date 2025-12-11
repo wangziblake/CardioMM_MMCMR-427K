@@ -60,7 +60,7 @@ Run the main code for evaluation and visualization, follow:
 Run the main code for automated analysis, see python scripts in:
 ```
 /CardioMM_automatedphenotyping
-Remember to download and configure the necessities in /nnUNet_related first. 
+Remember to download and configure the necessities in /nnUNet_related/nnUNet_results first. 
 ```
 
 Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning=1.9.0
