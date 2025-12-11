@@ -41,7 +41,7 @@ Run the main code for training subset re-organization, follow:
 ```
 /CardioMM_reconstruction/preparescript_CMRxReconAll.sh
 ```
-Run the main code for testing subset undersampling, run matlab script (We also welcome code contributions, especially re-implementations of this process in Python):
+Run the main code for testing subset undersampling, run MATLAB script (We also welcome code contributions, especially re-implementations of this process in Python):
 ```
 /CardioMM_dataundersampling/MaskGeneration_TestAnalysisSet_Fast.m
 ```
@@ -57,7 +57,7 @@ Run the main code for evaluation and visualization, follow:
 ```
 /CardioMM_reconstruction/evaluatescript_CMRxReconAll.sh
 ```
-Run the main code for automated analysis, see python scripts in:
+Run the main code for automated analysis, see Python scripts in:
 ```
 /CardioMM_automatedphenotyping
 Remember to download and configure the necessities in /nnUNet_related/nnUNet_results first. 
