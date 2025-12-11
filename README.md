@@ -35,6 +35,7 @@ The training, testing, visualization, and automated analysis codes of CardioMM f
 Install conda environment, see:
 ```
 Environment_install.txt
+Remember to download the necessities in /clip-vit-base-patch16. 
 ```
 Run the main code for training subset re-organization, follow:
 ```
@@ -59,6 +60,7 @@ Run the main code for evaluation and visualization, follow:
 Run the main code for automated analysis, see python scripts in:
 ```
 /CardioMM_automatedphenotyping
+Remember to download and configure the necessities in /nnUNet_related. 
 ```
 
 Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning=1.9.0
