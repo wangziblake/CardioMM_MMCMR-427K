@@ -30,14 +30,14 @@ Most of the real-world CMR datasets from our collection are publicly available n
 All used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
 ## CardioMM framework (still under construction ...)
-The training and testing codes of CardioMM are released here.
+The training, testing, visualization, and automated analysis codes of CardioMM framework are released here.
 
-Install conda environment:
+Install conda environment, see:
 ```bash
-conda env create -f environment
+Environment_install.txt
 ```
-Run the main code for training subset re-organization:
-```python
+Run the main code for training subset re-organization, see:
+```
 xxx.py
 ```
 Run the main code for training:
