@@ -32,7 +32,7 @@ All used public datasets are available on their websites, including https://gith
 ## CardioMM framework (still under construction ...)
 The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, We also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this pipeline, including both parallel imaging and compressed sensing approaches.
 
-Install conda environment, see:
+Install running environment, see:
 ```
 Environment_install.txt
 Remember to download the necessities in /clip-vit-base-patch16. 
