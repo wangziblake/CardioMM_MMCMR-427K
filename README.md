@@ -3,7 +3,7 @@
 
 ***Database:*** To enable such a model, we curate **MMCMR-427K, the largest and most comprehensive multimodal CMR k-space database** to date. It comprises 427,465 multi-coil k-space data paired with structured metadata (approximately 3.5 TB), from 6,120 scans of 1,504 participants, spanning 13 worldwide centers (four public repositories and nine clinical centers), 15 scanners (four vendors from low-field to ultra-high-field strengths), 12 CMR modalities, and 17 CVD categories across three populations (Asian, European, and North American).
 
-![MMCMR-427K](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/MMCMR-427K.png)
+![MMCMR-427K_Database](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/MMCMR-427K.png)
 
 ***Model:*** Leveraging this unprecedented infrastructure, we propose **CardioMM, the first generalist reconstruction foundation model capable of dynamically adapting to heterogeneous highly accelerated CMR scenarios**. CardioMM unifies semantic contextual understanding with physics-informed data consistency to deliver robust reconstructions across varied scanners, protocols, and patient presentations. It establishes a foundation for scalable, generalizable, and high-throughput multimodal cardiovascular imaging.
 
