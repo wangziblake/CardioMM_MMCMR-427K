@@ -73,7 +73,7 @@ Note: The software is used for academic only, and cannot be used commercially.
 ## Citation
 If you want to use the database and codes, please cite the following paper:
 
-Zi Wang et al., Enabling Ultra-Fast Multimodal Cardiovascular Imaging with a Generalist Foundation Model and Database, arXiv preprint, 2025.
+Zi Wang et al., Enabling Ultra-Fast Cardiovascular Imaging Across Heterogeneous Clinical Environments with a Generalist Foundation Model and Multimodal Database, arXiv preprint, 2025.
 
 
 ## Acknowledgement
