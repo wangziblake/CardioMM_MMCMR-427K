@@ -19,16 +19,16 @@
 
 ***Outlook:*** We anticipate that **CardioMM will become a foundational component of next-generation CMR workflows, enabling fast, consistent, and clinically accessible image reconstruction and analysis across heterogeneous imaging environments**. More broadly, this study outlines a clear direction for developing clinically deployable and reliable reconstruction foundation models, charting a decisive step toward the real-world integration of generalist models in medical imaging.
 
-The preprint paper can be seen at (coming soon ...).
+The preprint paper can be seen at (coming soon after the Christmas break ...).
 
 Email: Dr. Zi Wang (zi.wang@imperial.ac.uk); Dr. Chengyan Wang (wangcy@fudan.edu.cn) 
 
 
-## MMCMR-427K database (still under construction ...)
-All clinical CMR datasets from our collection are publicly available. Besides, all used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
+## MMCMR-427K database (still under construction, coming soon after the Christmas break ...)
+All clinical CMR datasets from our collection are publicly available at (coming soon after the Christmas break ...). Besides, all used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
-## CardioMM framework (still under construction ...)
-The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, We also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this pipeline, including both parallel imaging and compressed sensing approaches.
+## CardioMM framework (still under construction, coming soon after the Christmas break ...)
+The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, we also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this pipeline, including both parallel imaging and compressed sensing approaches.
 
 Install running environment, see:
 ```
