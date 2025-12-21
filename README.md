@@ -69,9 +69,10 @@ Note: The software is used for academic only, and cannot be used commercially.
 
 
 ## Citation
-**If you want to use the database and codes, please cite the following paper:
+**If you want to use the database and codes, please cite the following paper:**
 
-Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, arXiv preprint, 2025.**
+**Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, arXiv preprint, 2025.**
+
 
 You are also welcome to cite these highly related papers:
 
