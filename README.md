@@ -73,7 +73,6 @@ If you want to use the database and codes, please cite the following paper:
 ```
 Zi Wang et al., Enabling Ultra-Fast Cardiovascular Imaging Across Heterogeneous Clinical Environments with a Generalist Foundation Model and Multimodal Database, arXiv preprint, 2025.
 ```
-
 You are also welcome to cite these highly related papers:
 ```
 [1]
