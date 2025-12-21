@@ -70,22 +70,15 @@ Note: The software is used for academic only, and cannot be used commercially.
 
 ## Citation
 If you want to use the database and codes, please cite the following paper:
-```
+
 Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, arXiv preprint, 2025.
-```
+
 You are also welcome to cite these highly related papers:
-```
-[1] Zi Wang, Fanwen Wang, Chen Qin, Shuo Wang, Jun Lyu, Yan Li, Cheng Ouyang, Haoyu Zhang, Kunyuan Guo, Zhang Shi, Qirong Li, Ziqiang Xu, Yajing Zhang, Hao Li, Sha Hua, Longyu Sun, Mengting Sun, Qing Li, Ying-Hua Chu, Wenjia Bai, Jing Qin, Xiahai Zhuang, Claudia Prieto, Alistair Young, Michael Markl, He Wang, Lian-Ming Wu, Guang Yang, Xiaobo Qu, Chengyan Wang, CMRxRecon2024: A multimodality, multiview k-space dataset boosting universal machine learning for accelerated cardiac MRI, Radiology: Artificial Intelligence, 7: e240443, 2025.
-```
-```
-[2] Fanwen Wang, Zi Wang, Yan Li, Jun Lyu, Chen Qin, Shuo Wang, Kunyuan Guo, Mengting Sun, Mingkai Huang, Haoyu Zhang, Michael Tänzer, Qirong Li, Xinran Chen, Jiahao Huang, Yinzhe Wu, Yuntong Lyu, Longyu Sun, Qing Li, Ziqiang Xu, Bingyu Xin, Dimitris N. Metaxas, Kian Anvari Hamdani, Shahabedin Nabavi, George Yiasemis, Jonas Teuwen, Zhenxi Zhang, Sha Wang, Chi Zhang, Daniel B. Ennis, Zhihao Xue, Chenxi Hu, Ruru Xu, Ilkay Oksuz, Donghang Lyu, Yanxin Huang, Xinrui Guo, Ruqian Hao, Jaykumar Patel, Guanke Cai, Binghua Chen, Yajing Zhang, Sha Hua, Zhenshen Chen, Qi Dou, Xiahai Zhuang, Qian Tao, Wenjia Bai, Jing Qin, He Wang, Claudia Prieto, Michael Markl, Alistair Young, Hao Li, Xihong Hu, Lianmin Wu, Xiaobo Qu, Guang Yang, Chengyan Wang, Towards modality- and sampling-universal learning strategies for accelerating cardiovascular imaging: Summary of the CMRxRecon2024 challenge, IEEE Transactions on Medical Imaging, DOI: 10.1109/TMI.2025.3641610, 2025.
-```
-```
-[3] Chengyan Wang, Jun Lyu, Shuo Wang, Chen Qin, Kunyuan Guo, Xinyu Zhang, Xiaotong Yu, Yan Li, Fanwen Wang, Jianhua Jin, Zhang Shi, Ziqiang Xu, Yapeng Tian, Sha Hua, Zhensen Chen, Meng Liu, Mengting Sun, Xutong Kuang, Kang Wang, Haoran Wang, Hao Li, Yinghua Chu, Guang Yang, Wenjia Bai, Xiahai Zhuang, He Wang, Jing Qin, Xiaobo Qu, CMRxRecon: A publicly available k-space dataset and benchmark to advance deep learning for cardiac MRI, Scientific Data, 11: 687, 2024.
-```
-```
-[4] Jun Lyu, Chen Qin, Shuo Wang, Fanwen Wang, Yan Li, Zi Wang, Kunyuan Guo, Cheng Ouyang, Michael Tänzer, Meng Liu, Longyu Sun, Mengting Sun, Qing Li, Zhang Shi, Sha Hua, Hao Li, Zhensen Chen, Zhenlin Zhang, Bingyu Xin, Dimitris N. Metaxas, George Yiasemis, Jonas Teuwen, Liping Zhang, Weitian Chen, Yidong Zhao, Qian Tao, Yanwei Pang, Xiaohan Liu, Artem Razumov, Dmitry V. Dylov, Quan Dou, Kang Yan, Yuyang Xue, Yuning Du, Julia Dietlmeier, Carles Garcia-Cabrera, Ziad Al-Haj Hemidi, Nora Vogt, Ziqiang Xu, Yajing Zhang, Ying-Hua Chu, Weibo Chen, Wenjia Bai, Xiahai Zhuang, Jing Qin, Lianming Wu, Guang Yang, Xiaobo Qu, He Wang, Chengyan Wang, The state-of-the-art in cardiac MRI reconstruction: Results of the CMRxRecon challenge in MICCAI 2023, Medical Image Analysis, 101: 103485, 2025.
-```
+
+[1] Zi Wang et al., CMRxRecon2024: A multimodality, multiview k-space dataset boosting universal machine learning for accelerated cardiac MRI, Radiology: Artificial Intelligence, 7: e240443, 2025.
+[2] Fanwen Wang et al., Towards modality- and sampling-universal learning strategies for accelerating cardiovascular imaging: Summary of the CMRxRecon2024 challenge, IEEE Transactions on Medical Imaging, DOI: 10.1109/TMI.2025.3641610, 2025.
+[3] Chengyan Wang et al., CMRxRecon: A publicly available k-space dataset and benchmark to advance deep learning for cardiac MRI, Scientific Data, 11: 687, 2024.
+[4] Jun Lyu et al., The state-of-the-art in cardiac MRI reconstruction: Results of the CMRxRecon challenge in MICCAI 2023, Medical Image Analysis, 101: 103485, 2025.
 
 ## Acknowledgement
 The authors thank Drs. Jure Zbontar, Anuroop Sriram, Bingyu Xin, Ilya Sutskever, Fabian Isensee, and Devran Ugurlu for sharing their codes online. 
