@@ -72,7 +72,7 @@ Note: The software is used for academic only, and cannot be used commercially.
 **If you want to use the database and codes, please cite the following paper:<br>**
 **Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, arXiv preprint, 2025.**
 
-You are also welcome to cite these highly related papers:<br>
+You are also welcome to cite these highly related papers:
 1.  Zi Wang et al., CMRxRecon2024: A multimodality, multiview k-space dataset boosting universal machine learning for accelerated cardiac MRI, ***Radiology: Artificial Intelligence***, 7: e240443, 2025.<br>
 2.  Fanwen Wang et al., Towards modality- and sampling-universal learning strategies for accelerating cardiovascular imaging: Summary of the CMRxRecon2024 challenge, ***IEEE Transactions on Medical Imaging***, DOI: 10.1109/TMI.2025.3641610, 2025.<br>
 3.  Chengyan Wang et al., CMRxRecon: A publicly available k-space dataset and benchmark to advance deep learning for cardiac MRI, ***Scientific Data***, 11: 687, 2024.<br>
