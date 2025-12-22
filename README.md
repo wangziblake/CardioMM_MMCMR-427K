@@ -70,7 +70,7 @@ Note: The software is used for academic only, and cannot be used commercially.
 
 ## Citation
 **If you want to use the database and codes, please cite the following paper:<br>**
-  **Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, arXiv preprint, 2025.**
+**Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, arXiv preprint, 2025.**
 
 You are also welcome to cite these highly related papers:<br>
 1.  Zi Wang et al., CMRxRecon2024: A multimodality, multiview k-space dataset boosting universal machine learning for accelerated cardiac MRI, ***Radiology: Artificial Intelligence***, 7: e240443, 2025.<br>
