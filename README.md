@@ -19,9 +19,9 @@
 
 ***Outlook:*** We anticipate that **CardioMM will become a foundational component of next-generation CMR workflows, enabling fast, consistent, and clinically accessible image reconstruction and analysis across heterogeneous imaging environments**. More broadly, this study outlines a clear direction for developing clinically deployable and reliable reconstruction foundation models, charting a decisive step toward the real-world integration of generalist models in medical imaging.
 
-The preprint paper can be seen at (coming soon after the Christmas break ...).
+**The preprint paper can be seen at (coming soon after the Christmas break ...).**
 
-Email: Dr. Zi Wang (zi.wang@imperial.ac.uk); Dr. Chengyan Wang (wangcy@fudan.edu.cn) 
+**Email: Dr. Zi Wang (zi.wang@imperial.ac.uk); Dr. Chengyan Wang (wangcy@fudan.edu.cn)**
 
 
 ## MMCMR-427K database (still under construction, coming soon after the Christmas break ...)
@@ -65,7 +65,7 @@ Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning=1.9.0
 
 Implementation tips: If you want to test on your own collected data, they should be stored in the same format as the data we provided.
 
-Note: The software is used for academic only, and cannot be used commercially.
+**Note: The software is used for academic only, and cannot be used commercially.**
 
 
 ## Citation
