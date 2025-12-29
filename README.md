@@ -19,7 +19,7 @@
 
 ***Outlook:*** We anticipate that **CardioMM will become a foundational component of next-generation CMR workflows, enabling fast, consistent, and clinically accessible image reconstruction and analysis across heterogeneous imaging environments**. More broadly, this study outlines a clear direction for developing clinically deployable and reliable reconstruction foundation models, charting a decisive step toward the real-world integration of generalist models in medical imaging.
 
-**The preprint paper can be seen at (coming soon after the Christmas break ...).**
+**The preprint paper can be seen at https://doi.org/10.48550/arXiv.2512.21652**
 
 **Email: Dr. Zi Wang (zi.wang@imperial.ac.uk); Dr. Chengyan Wang (wangcy@fudan.edu.cn)**
 
@@ -70,7 +70,7 @@ Implementation tips: If you want to test on your own collected data, they should
 
 ## Citation
 **If you want to use the database and codes, please cite the following paper:<br>**
-1.  Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, ***arXiv preprint***, 2025.
+1.  Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, ***arXiv: 2512.21652***, DOI: 10.48550/arXiv.2512.21652, 2025.
 
 You are also welcome to cite these highly related papers:
 1.  Zi Wang et al., CMRxRecon2024: A multimodality, multiview k-space dataset boosting universal machine learning for accelerated cardiac MRI, ***Radiology: Artificial Intelligence***, 7: e240443, 2025.<br>
