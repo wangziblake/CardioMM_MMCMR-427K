@@ -24,7 +24,7 @@
 **Email: Dr. Zi Wang (zi.wang@imperial.ac.uk); Dr. Chengyan Wang (wangcy@fudan.edu.cn)**
 
 
-## MMCMR-427K database (still under construction, coming soon after the Christmas break ...)
+## MMCMR-427K database (under construction)
 All clinical CMR datasets from our collection are publicly available at (coming soon ...). Besides, all used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
 ## CardioMM framework
