@@ -1,0 +1,30 @@
+# torch2.0 for CardioMM
+conda create -n torch2.0 python=3.8
+conda install pytorch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 pytorch-cuda=11.7 -c pytorch -c nvidia
+pip install pytorch_lightning==1.9.0
+pip install h5py
+pip install runstats
+pip install transformers
+pip install cupy-cuda117
+pip install scikit-image
+pip install sigpy
+pip install pandas
+pip install tensorboard
+pip install matplotlib
+
+# nnunetv2 for nnUNet segmentation used in automated cardiac imaging phenotyping pipeline
+conda create -n nnunetv2 python=3.10
+pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
+pip install opencv-python
+pip install vtk
+pip install pytorch_lightning==1.9.0
+pip install h5py
+pip install runstats
+pip install transformers
+pip install scikit-image
+pip install pandas
+pip install tensorboard
+pip install matplotlib
+pip install nibabel
+
+
