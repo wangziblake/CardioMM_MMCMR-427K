@@ -44,9 +44,10 @@ md5sum MMCMR_427K.tar.gz
 If the output matches the values above, your files are complete and correct. If not, you need to check the split files one by one to find out the broken one, and just download it again. You can check them by the following:
 
 Step1: Download the [md5sum result](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/MMCMR_427K-parts-md5sum.txt) for split files.<br>
-Step2: Check split files by [script](https://github.com/CmrxRecon/CMRx-evaluation-snippets/blob/master/scripts/check-script.py):<br>
+Step2: Check split files by [script](https://github.com/CmrxRecon/CMRx-evaluation-snippets/blob/master/scripts/check-script.py):
+```
 python check-script.py --md5 path/to/MMCMR_427K-parts-md5sum.txt path/to/split/files/stored/directory
-
+```
 
 ## CardioMM framework
 The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, we also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this pipeline, including both parallel imaging and compressed sensing approaches.
