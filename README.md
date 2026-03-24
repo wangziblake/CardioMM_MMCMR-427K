@@ -35,14 +35,13 @@ mkdir tmp
 mv Data-part-*.tar.gz tmp/
 cat `seq -f "tmp/Data-part-%03g.tar.gz" 0 361` > MMCMR_427K.tar.gz
 ```
-Check File Integrity with MD5 Checksums. After downloading, you can verify the integrity of each file by checking its MD5 checksum to ensure the file has not been corrupted during download. Run the following commands in your terminal:
+Check file integrity with MD5 checksums. After downloading, you can verify the integrity of each file by checking its MD5 checksum to ensure the file has not been corrupted during download. Run the following commands in your terminal:
 ```bash
 md5sum MMCMR_427K.tar.gz
 # The following outputs are expected.
 # 13834e85dfd0566693029eddd6b42d40  MMCMR_427K.tar.gz
 ```
-If the output matches the values above, your files are complete and correct. If not, you need to check the split files one by one to find out the broken one, and just download it again. You can check them by the following:
-
+If the output matches the values above, your files are complete and correct. If not, you need to check the split files one by one to find out the broken one, and just download it again. You can check them by the following:<br>
 Step1: Download the [md5sum result](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/MMCMR_427K-parts-md5sum.txt) for split files.<br>
 Step2: Check split files by [script](https://github.com/CmrxRecon/CMRx-evaluation-snippets/blob/master/scripts/check-script.py):
 ```
