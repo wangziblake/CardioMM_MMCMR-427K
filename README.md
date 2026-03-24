@@ -27,7 +27,7 @@
 ## MMCMR-427K database
 All clinical CMR datasets from our collection are publicly available at [**this access portal**](https://www.wjx.top/vm/h4R5i36.aspx#).
 
-### Important: File merging and integrity verification
+**Important: File merging and integrity verification**
 Please strictly follow the steps below to merge and verify the dataset files. If the split files are not merged correctly, the final `.tar.gz` file will be corrupted and cannot be extracted successfully.
 
 
