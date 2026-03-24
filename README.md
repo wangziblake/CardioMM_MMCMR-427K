@@ -42,11 +42,9 @@ md5sum MMCMR_427K.tar.gz
 # 13834e85dfd0566693029eddd6b42d40  MMCMR_427K.tar.gz
 ```
 If the output matches the values above, your files are complete and correct. If not, you need to check the split files one by one to find out the broken one, and just download it again. You can check them by the following:
-```
 Step1: Download the [md5sum result](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/MMCMR_427K-parts-md5sum.txt) for split files.
 Step2: Check split files by [script](https://github.com/CmrxRecon/CMRx-evaluation-snippets/blob/master/scripts/check-script.py).
 python check-script.py --md5 path/to/MMCMR_427K-parts-md5sum.txt path/to/split/files/stored/directory
-```
 
 Besides, all used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
