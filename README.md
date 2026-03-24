@@ -27,6 +27,12 @@
 ## MMCMR-427K database
 All clinical CMR datasets from our collection are publicly available at [**this access portal**](https://www.wjx.top/vm/h4R5i36.aspx#).
 
+### Important: File merging and integrity verification
+Please strictly follow the steps below to merge and verify the dataset files. If the split files are not merged correctly, the final `.tar.gz` file will be corrupted and cannot be extracted successfully.
+
+
+
+
 Besides, all used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
 ## CardioMM framework
