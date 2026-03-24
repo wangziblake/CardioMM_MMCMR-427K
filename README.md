@@ -47,7 +47,6 @@ Step1: Download the [md5sum result](https://github.com/wangziblake/CardioMM_MMCM
 Step2: Check split files by [script](https://github.com/CmrxRecon/CMRx-evaluation-snippets/blob/master/scripts/check-script.py).
 python check-script.py --md5 path/to/MMCMR_427K-parts-md5sum.txt path/to/split/files/stored/directory
 
-Besides, all used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply. 
 
 ## CardioMM framework
 The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, we also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this pipeline, including both parallel imaging and compressed sensing approaches.
@@ -103,6 +102,8 @@ You are also welcome to cite these highly related papers:
 
 ## Acknowledgement
 The authors thank Drs. Jure Zbontar, Anuroop Sriram, Bingyu Xin, Ilya Sutskever, Fabian Isensee, and Devran Ugurlu for sharing their codes online. 
+
+All used public datasets are available on their websites, including https://github.com/CmrxRecon, https://ocmr.info, and https://www.ukbiobank.ac.uk. For UK Biobank, the imaging data and non-imaging participant characteristics are available to approved researchers via a standard application process at http://www.ukbiobank.ac.uk/register-apply.
 
 
 ![Visitors](https://visitor-badge.laobi.icu/badge?page_id=<wangziblake>.<CardioMM_MMCMR-427K>)
