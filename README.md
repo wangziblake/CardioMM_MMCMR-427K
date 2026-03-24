@@ -29,6 +29,12 @@ All clinical CMR datasets from our collection are publicly available at [**this 
 
 **⚠️ File merging and integrity verification: Please strictly follow the steps below to merge and verify the dataset files. If the split files are not merged correctly, the final `.tar.gz` file will be corrupted and cannot be extracted successfully.**
 
+Merge the split files into the single complete file:
+```
+mkdir tmp
+mv Data-part-*.tar.gz tmp/
+cat `seq -f "tmp/Data-part-%03g.tar.gz" 0 361` > MMCMR_427.tar.gz
+```
 
 
 
