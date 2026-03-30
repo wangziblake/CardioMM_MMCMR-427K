@@ -13,7 +13,7 @@
 
 ***Complementarity:*** Notably, **our framework does not compete with existing CMR analytical foundation models** that operate on post-reconstruction images; rather, **it complements them by filling a critical upstream gap in the multimodal CMR computational pipeline**. By delivering higher-quality and more diverse image reconstructions, CardioMM provides a more robust and reliable foundation for downstream segmentation, phenotyping, diagnosis, and beyond.
 
-***Engagement:*** Remarkably, **in our organized CMRxRecon challenge series (2023–2025), more than 11,000 active participants from 125 countries and regions have engaged**, reflecting the broad and growing global interest in next-generation CMR technologies.
+***Engagement:*** Remarkably, **in our organized [CMRxRecon challenge series](https://github.com/CmrxRecon) (2023–2025), more than 11,000 active participants from 125 countries and regions have engaged**, reflecting the broad and growing global interest in next-generation CMR technologies.
 
 ***Impact:*** This work provides **the first evidence** that a generalist reconstruction foundation model can be successfully applied to and fundamentally reshape fast CMR imaging paradigms, **revealing substantial untapped acceleration potential and strong heterogeneous generalization**. 
 
