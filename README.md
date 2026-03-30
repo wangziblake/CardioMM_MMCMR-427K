@@ -27,6 +27,8 @@
 ## MMCMR-427K database
 All clinical CMR datasets from our collection are publicly available at [**this access portal**](https://www.wjx.top/vm/h4R5i36.aspx#).
 
+**🚀 Good news: Our database has been used to drive NVIDIA’s universal MRI reconstruction model ([NV-Raw2insights-MRI](https://huggingface.co/nvidia/NV-Raw2insights-MRI)) in [NVIDIA MedTech Open Models project] (https://www.nvidia.com/en-us/on-demand/session/gtc26-s81599), underscoring its importance as a foundational data resource for next-generation physical AI and medical imaging.**
+
 **⚠️ File merging and integrity verification: Please strictly follow the steps below to merge and verify the dataset files. If the split files are not merged correctly, the final `.tar.gz` file will be corrupted and cannot be extracted successfully.**
 
 Merge the split files into the single complete file:
@@ -86,11 +88,11 @@ Python environment: python=3.8, pytorch=2.0.1, pytorch_lightning=1.9.0
 
 Implementation tips: If you want to test on your own collected data, they should be stored in the same format as the data we provided.
 
-**Note: The software is used for academic only, and cannot be used commercially.**
+**⚡ Note: The software is used for academic only, and cannot be used commercially.**
 
 
 ## Citation
-**If you want to use the database and codes, please cite the following paper:<br>**
+**📢 If you want to use the database and codes, please cite the following paper:<br>**
 1.  Zi Wang et al., Enabling ultra-fast cardiovascular imaging across heterogeneous clinical environments with a generalist foundation model and multimodal database, ***arXiv: 2512.21652***, DOI: 10.48550/arXiv.2512.21652, 2025.
 
 You are also welcome to cite these highly related papers:
