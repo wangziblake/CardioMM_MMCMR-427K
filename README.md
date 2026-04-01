@@ -1,7 +1,7 @@
 # Enabling Ultra-Fast Cardiovascular Imaging Across Heterogeneous Clinical Environments with A Generalist Foundation Model and Multimodal Database
 
 <p align="center">
-  <img src="https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/Gemini_CardioMM.png" height="120">
+  <img src="https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/Gemini_CardioMM.png" height="200">
 </p>
 
 ***Motivation:*** Multimodal cardiovascular magnetic resonance (CMR) imaging offers comprehensive and non-invasive insights into cardiovascular disease (CVD) diagnosis and underlying mechanisms, but its widespread real-world adoption remains constrained by prolonged scan times and heterogeneity across medical environments. **This underscores the urgent need to address a largely unexplored gap: a generalist reconstruction foundation model for ultra-fast CMR imaging**—one capable of adapting across diverse imaging scenarios and **serving as the essential substrate for all downstream analyses**.
