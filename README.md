@@ -1,4 +1,7 @@
 # Enabling Ultra-Fast Cardiovascular Imaging Across Heterogeneous Clinical Environments with A Generalist Foundation Model and Multimodal Database
+
+![LOGO](https://github.com/wangziblake/CardioMM_MMCMR-427K/blob/main/Figure/Gemini_CardioMM.png)
+
 ***Motivation:*** Multimodal cardiovascular magnetic resonance (CMR) imaging offers comprehensive and non-invasive insights into cardiovascular disease (CVD) diagnosis and underlying mechanisms, but its widespread real-world adoption remains constrained by prolonged scan times and heterogeneity across medical environments. **This underscores the urgent need to address a largely unexplored gap: a generalist reconstruction foundation model for ultra-fast CMR imaging**—one capable of adapting across diverse imaging scenarios and **serving as the essential substrate for all downstream analyses**.
 
 ***Database:*** To enable this goal, we curate **MMCMR-427K, the largest and most comprehensive multimodal CMR k-space database** to date. It comprises 427,465 multi-coil k-space data paired with structured metadata (approximately 3.5 TB), from 6,120 scans of 1,504 participants, spanning 13 international centers (four public repositories and nine clinical centers), 15 scanners (four vendors from low-field to ultra-high-field strengths), 12 CMR modalities, and 17 CVD categories across three populations (Asian, European, and North American).
