@@ -28,11 +28,10 @@
 
 **Email: Dr. Zi Wang (zi.wang@imperial.ac.uk); Dr. Chengyan Wang (wangcy@fudan.edu.cn)**
 
+**🚀 GOOD NEWS:** Our database and data processing scripts have been used to drive NVIDIA’s universal MRI reconstruction model ([NV-Raw2insights-MRI](https://huggingface.co/nvidia/NV-Raw2insights-MRI)) in NVIDIA [MedTech Open Models project](https://www.nvidia.com/en-us/on-demand/session/gtc26-s81599), underscoring its importance as a foundational data resource for next-generation physical AI and medical imaging.
 
 ## MMCMR-427K database
 All clinical CMR datasets from our collection are publicly available at [**this access portal**](https://www.wjx.top/vm/h4R5i36.aspx#).
-
-**🚀 GOOD NEWS:** Our database has been used to drive NVIDIA’s universal MRI reconstruction model ([NV-Raw2insights-MRI](https://huggingface.co/nvidia/NV-Raw2insights-MRI)) in NVIDIA [MedTech Open Models project](https://www.nvidia.com/en-us/on-demand/session/gtc26-s81599), underscoring its importance as a foundational data resource for next-generation physical AI and medical imaging.
 
 **⚠️ File merging and integrity verification:** Please strictly follow the steps below to merge and verify the dataset files. If the split files are not merged correctly, the final `.tar.gz` file will be corrupted and cannot be extracted successfully.
 
