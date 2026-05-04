@@ -54,6 +54,9 @@ Step2: Check split files by [script](https://github.com/CmrxRecon/CMRx-evaluatio
 python check-script.py --md5 path/to/MMCMR_427K-parts-md5sum.txt path/to/split/files/stored/directory
 ```
 
+**⚡ Note: The software is used for academic only, and cannot be used commercially.**
+
+
 ## CardioMM framework
 The training, testing, visualization, and automated analysis codes of CardioMM framework are released here. Besides, we also share the implementation of the conventional SENSE method to facilitate the integration of more conventional reconstruction techniques within this pipeline, including both parallel imaging and compressed sensing approaches.
 
