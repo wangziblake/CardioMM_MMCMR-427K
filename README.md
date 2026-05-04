@@ -54,7 +54,7 @@ Step2: Check split files by [script](https://github.com/CmrxRecon/CMRx-evaluatio
 python check-script.py --md5 path/to/MMCMR_427K-parts-md5sum.txt path/to/split/files/stored/directory
 ```
 
-**⚡ Note: The software is used for academic only, and cannot be used commercially.**
+**⚡ Note: The database is used for academic only, and cannot be used commercially.**
 
 
 ## CardioMM framework
