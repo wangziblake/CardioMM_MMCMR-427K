@@ -1,5 +1,12 @@
 """
-Calculate the wall thickness from gt sax .nii.gz - pytorch - CMRxReconAll
+Calculate myocardial wall thickness from ground-truth SAX segmentations.
+
+This script scans pre-extracted ED short-axis segmentation files, runs
+short-axis segmentation quality control, calls the shared wall-thickness
+estimator, and aggregates mean/max AHA-segment wall thickness values into CSV
+tables. The expected segmentation label convention is LV cavity = 1,
+myocardium = 2, and RV cavity = 3.
+
 Created on 2025/08/17
 @author: Zi Wang
 Modified from Wenjia Bai's code (https://github.com/baiwenjia/ukbb_cardiac)
@@ -17,6 +24,18 @@ from cardiac_utils import sa_pass_quality_control, evaluate_wall_thickness
 
 
 def replace_mask_to_find_datatype_undersample_af(mask_filename):
+    """Infer datatype, mask type, and acceleration factor from a label filename.
+
+    Ground-truth SOS segmentations are treated as fully sampled data, so the
+    mask and acceleration factor are fixed to ``"Full"`` and ``"1"``.
+
+    Args:
+        mask_filename (str): Segmentation filename such as
+            ``"cine_sax_label_ED.nii.gz"``.
+
+    Returns:
+        tuple: ``(datatype, mask, af)`` parsed from the filename and GT setting.
+    """
     base, ext = mask_filename.rsplit(".", 1)  # 'cine_sax_label_ED.nii', '.gz'
     datatype = base.rsplit("_label", 1)[0]  # 'cine_sax'
     mask, af = 'Full', '1'
@@ -24,6 +43,22 @@ def replace_mask_to_find_datatype_undersample_af(mask_filename):
 
 
 def extract_attrs(save_path, medcon=None):
+    """Extract metadata fields encoded in a CMRxReconAll ED segmentation path.
+
+    The path layout is assumed to follow
+    ``.../<Modality>/<Set>/GTSOS_NII/<Center>/<Scanner>/<Patient>/<File>``.
+    Scanner names are expected to contain vendor, field strength, and scanner
+    model separated by underscores.
+
+    Args:
+        save_path (str): Full path to an ED segmentation NIfTI file.
+        medcon (str, optional): Medical condition override. If None, a simple
+            centre-based fallback is used.
+
+    Returns:
+        tuple: ``(modality, center, vendor, field_strength, pfolder, datatype,
+        mask, af, medcon)`` for CSV reporting.
+    """
     # save_path: "../Cine/TestSet/GTSOS_NII/Center015/Siemens_30T_Vida/P031/cine_sax_label_ED.nii.gz"
     path_parts = save_path.split(os.sep)
     modality = path_parts[-7]  # 'Cine'
@@ -46,20 +81,21 @@ def extract_attrs(save_path, medcon=None):
 
 
 def add_or_update_row(ranks, new_row, check_cols, criteria_cols):
-    """
-    This function checks if a row with the same 'check_cols' values already exists in the DataFrame 'ranks'.
-    If it exists and only the criteria are different, it updates the criteria.
-    If the entire row (including criteria) is the same, it skips adding the row.
-    If the row doesn't exist, it adds the new row to the DataFrame.
+    """Add a new result row or update existing metric columns in-place.
 
-    Parameters:
-    ranks (pd.DataFrame): The DataFrame containing previous records.
-    new_row (dict): The new row to be added or checked for duplication.
-    check_cols (list): The list of columns to check for duplicate rows (non-criteria columns).
-    criteria_cols (list): The list of columns to update if they are different (criteria columns like 'PSNR', 'SSIM', 'NMSE').
+    Rows are considered the same case/method entry when all columns in
+    ``check_cols`` match. If such a row already exists, only the wall-thickness
+    metric columns in ``criteria_cols`` are refreshed; otherwise the row is
+    appended.
+
+    Args:
+        ranks (pd.DataFrame): Existing result table.
+        new_row (dict): Candidate row containing metadata and metric values.
+        check_cols (list): Metadata columns used to identify duplicate records.
+        criteria_cols (list): Metric columns to update for an existing record.
 
     Returns:
-    pd.DataFrame: The updated DataFrame with the new row or updated criteria.
+        pd.DataFrame: Updated result table.
     """
     new_df = pd.DataFrame([new_row])
     for col in check_cols:
@@ -84,6 +120,23 @@ def add_or_update_row(ranks, new_row, check_cols, criteria_cols):
 
 
 def process_case(f, RootDir, evaluate_set, medcon):
+    """Compute mean and maximum wall thickness metrics for ED segmentations.
+
+    For each ED SAX segmentation, this function validates the segmentation,
+    calls ``evaluate_wall_thickness`` to create temporary per-case VTK/CSV
+    outputs, reads the mean and max AHA-segment thickness CSVs, and updates the
+    aggregate result tables under ``CalClinicalMeasure``.
+
+    Args:
+        f (list): ED segmentation file paths to process.
+        RootDir (str): Root segmentation directory used to derive the CSV
+            output directory.
+        evaluate_set (str): Dataset split name included in the output filename.
+        medcon (str): Medical condition value passed to ``extract_attrs``.
+
+    Returns:
+        None: Results are written to CSV files.
+    """
     csvdir = RootDir.replace('SegNII', 'CalClinicalMeasure')
     save_path = os.path.join(csvdir, f'CliCal_{evaluate_set}_WallThickness_GTSOS.csv')
     save_path_max = os.path.join(csvdir, f'CliCal_{evaluate_set}_WallThicknessMax_GTSOS.csv')
@@ -132,25 +185,26 @@ def process_case(f, RootDir, evaluate_set, medcon):
                          'WT_Max_AHA_13 (mm)', 'WT_Max_AHA_14 (mm)', 'WT_Max_AHA_15 (mm)', 'WT_Max_AHA_16 (mm)',
                          'WT_Max_Global (mm)']
 
-    # 1. evaluate segmentation images
+    # 1. Evaluate segmentation images.
     for ff in tqdm(f, desc='files'):
         print('-- processing --', ff)
         # gtff example: /{gtinput_dir}/Cine/TestSet/GTSOS/Center015/Siemens_30T_Vida/P301/cine_sax_label_ED.nii.gz
         modality, center, vendor, field_strength, pfolder, datatype, mask, af, medcon = extract_attrs(ff, medcon)  # get the attributes from the filename
 
-        # load data for evaluation
+        # Load data for evaluation and skip missing or poor-quality ED masks.
         seg_ED_name = ff
         if not os.path.exists(seg_ED_name):
             continue
         if not sa_pass_quality_control(seg_ED_name):
             continue
 
-        # Evaluate myocardial wall thickness
+        # Evaluate myocardial wall thickness. The helper writes per-case VTK,
+        # mean-thickness CSV, and max-thickness CSV files using this stem.
         print('-- start calculating --', ff)
         temp_WT_ED_vtk = ff.replace('_label_ED.nii.gz', '_label_ED_WT')
         evaluate_wall_thickness(ff, temp_WT_ED_vtk)
 
-        # Record data
+        # Record mean wall thickness for AHA segments 1-16 plus the global row.
         if os.path.exists('{0}.csv'.format(temp_WT_ED_vtk)):
             df = pd.read_csv('{0}.csv'.format(temp_WT_ED_vtk), index_col=0)
             line = df['Thickness'].values
@@ -159,6 +213,8 @@ def process_case(f, RootDir, evaluate_set, medcon):
                 val[f'WT_AHA_{i+1}'] = line[i]
             val['WT_Global'] = line[16]
 
+        # Record maximum wall thickness for AHA segments 1-16 plus the global
+        # row.
         if os.path.exists('{0}_max.csv'.format(temp_WT_ED_vtk)):
             df = pd.read_csv('{0}_max.csv'.format(temp_WT_ED_vtk), index_col=0)
             line = df['Thickness_Max'].values
@@ -167,7 +223,7 @@ def process_case(f, RootDir, evaluate_set, medcon):
                 val_max[f'WT_Max_AHA_{i+1}'] = line[i]
             val_max['WT_Max_Global'] = line[16]
 
-        # save the evaluation results to the pandas frame
+        # Save the evaluation results to the pandas frames.
         new_row = {'Method': 'GTSOS', 'Modality': modality, 'Task': 'TaskAll', 'Center': center, 'Vendor': vendor,
                    'Field': field_strength, 'Pfolder': pfolder, 'Datatype': datatype, 'Mask': mask, 'AF': af, 'Medcon': medcon,
                    'WT_AHA_1 (mm)': val['WT_AHA_1'], 'WT_AHA_2 (mm)': val['WT_AHA_2'], 'WT_AHA_3 (mm)': val['WT_AHA_3'],
@@ -190,7 +246,7 @@ def process_case(f, RootDir, evaluate_set, medcon):
         ranks_max = add_or_update_row(ranks_max, new_row_max, check_cols, criteria_cols_max)
         print('-- end calculating --', ff)
 
-    # 2. save results to .csv
+    # 2. Save results to .csv.
     if not os.path.isdir(csvdir):
         os.makedirs(csvdir)
     ranks.to_csv(save_path, index=False)
@@ -206,6 +262,8 @@ if __name__ == "__main__":
 
     EXCLUDED_KEYWORDS = ['Center010', 'Center007', 'Center012', '055T', '50T']  # Exclude specific centers (pediatric) or scanners (low/ultra high-field)
 
+    # Map each supported modality to the ED segmentation filename pattern used
+    # for recursive discovery. Only the selected modality is populated below.
     modalities = {
         'Cine': 'cine_sax*_label_ED.nii.gz',
     }
@@ -213,6 +271,8 @@ if __name__ == "__main__":
 
     for modal, pattern in modalities.items():
         if modality == modal:
+            # Keep only GT SOS NIfTI files from the requested evaluation split,
+            # while excluding centres/scanners that should not enter this run.
             file_dict[modal] = sorted([
                 file for file in glob.glob(os.path.join(RootDir, f'**/{pattern}'), recursive=True)
                 if all(x in file for x in ['GTSOS_NII', modal, evaluate_set])
@@ -225,4 +285,5 @@ if __name__ == "__main__":
     print(f'Total files: {len(f)}')
     print('##############')
 
+    # Process all discovered ED files and update the wall-thickness CSVs.
     process_case(f, RootDir, evaluate_set, medcon='')

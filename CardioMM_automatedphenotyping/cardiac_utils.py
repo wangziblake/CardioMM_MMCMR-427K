@@ -1,5 +1,16 @@
 """
-Cardiac utils - pytorch - CMRxReconAll
+Cardiac segmentation utilities for CMRxReconAll.
+
+This module contains post-processing helpers for cardiac MR segmentations:
+short-axis quality control, AHA coordinate/segment assignment, myocardial wall
+thickness estimation, and atrial area/length measurement from long-axis views.
+
+The code assumes the segmentation label convention used throughout this
+project: background = 0, LV cavity = 1, myocardium = 2, and RV cavity = 3 for
+short-axis images. Most geometric measurements are converted from voxel indices
+to physical/world coordinates with the NIfTI affine before distances are
+computed.
+
 Created on 2025/06/30
 @author: Zi Wang
 Modified from Wenjia Bai's code (https://github.com/baiwenjia/ukbb_cardiac)
@@ -21,7 +32,19 @@ import skimage.measure
 
 
 def sa_pass_quality_control(seg_sa_name):
-    """ Quality control for short-axis image segmentation """
+    """Run quality control checks on a short-axis segmentation.
+
+    The checks ensure that the required LV, myocardium, and RV labels are
+    present, that the LV/myocardium labels span enough contiguous slices, and
+    that the mid-cavity slice contains enough LV epicardium and RV area to
+    define the AHA coordinate system.
+
+    Args:
+        seg_sa_name (str): Path to a NIfTI segmentation volume.
+
+    Returns:
+        bool: True if the segmentation passes all checks; otherwise False.
+    """
     nim = nib.load(seg_sa_name)
     seg_sa = np.asanyarray(nim.dataobj)
     X, Y, Z = seg_sa.shape[:3]
@@ -61,7 +84,8 @@ def sa_pass_quality_control(seg_sa_name):
               'It does not pass the quality control.'.format(seg_sa_name))
         return False
 
-    # Criterion 3: LV and RV exists on the mid-cavity slice
+    # Criterion 3: LV and RV exist on the mid-cavity slice. This is required
+    # because the septal direction is inferred from the LV/RV relationship.
     _, _, cz = [np.mean(x) for x in np.nonzero(seg_sa == label['LV'])]
     z = int(round(cz))
     seg_z = seg_sa[:, :, z]
@@ -83,7 +107,15 @@ def sa_pass_quality_control(seg_sa_name):
 
 
 def get_largest_cc(binary):
-    """ Get the largest connected component in the foreground. """
+    """Get the largest connected component in a binary foreground mask.
+
+    Args:
+        binary (np.ndarray): Binary array whose non-zero values are foreground.
+
+    Returns:
+        np.ndarray: Boolean mask containing only the largest foreground
+        connected component.
+    """
     cc, n_cc = measure.label(binary)
     max_n = -1
     max_area = 0
@@ -97,7 +129,15 @@ def get_largest_cc(binary):
 
 
 def remove_small_cc(binary, thres=10):
-    """ Remove small connected component in the foreground. """
+    """Remove small connected components from a binary foreground mask.
+
+    Args:
+        binary (np.ndarray): Binary array whose non-zero values are foreground.
+        thres (int): Components with fewer than this many pixels are removed.
+
+    Returns:
+        np.ndarray: Copy of ``binary`` with small connected components set to 0.
+    """
     cc, n_cc = measure.label(binary)
     binary2 = np.copy(binary)
     for n in range(1, n_cc + 1):
@@ -108,7 +148,22 @@ def remove_small_cc(binary, thres=10):
 
 
 def evaluate_wall_thickness(seg_name, output_name_stem, part=None):
-    """ Evaluate myocardial wall thickness. """
+    """Evaluate myocardial wall thickness and export per-point/per-segment files.
+
+    For each valid short-axis slice, this function extracts the LV endocardial
+    and epicardial contours, maps contour points into physical coordinates, and
+    estimates wall thickness as the nearest-neighbour distance from each
+    endocardial point to the epicardial contour. Per-point measurements are
+    written as VTK polydata, while mean and maximum values are summarized by AHA
+    segment in CSV files.
+
+    Args:
+        seg_name (str): Path to a short-axis NIfTI segmentation.
+        output_name_stem (str): Output prefix for ``.vtk`` and ``.csv`` files.
+        part (str, optional): If provided, assign every slice to this AHA part
+            (for example ``"basal"``, ``"mid"``, or ``"apical"``). If None,
+            slice parts are inferred from the segmentation geometry.
+    """
     # Read the segmentation image
     nim = nib.load(seg_name)
     Z = nim.header['dim'][3]
@@ -128,7 +183,8 @@ def evaluate_wall_thickness(seg_name, output_name_stem, part=None):
     else:
         part_z = {z: part for z in range(Z)}
 
-    # Construct the points set to represent the endocardial contours
+    # Construct VTK arrays that hold the endocardial contour geometry and the
+    # per-point attributes saved alongside it.
     endo_points = vtk.vtkPoints()
     thickness = vtk.vtkDoubleArray()
     thickness.SetName('Thickness')
@@ -182,7 +238,8 @@ def evaluate_wall_thickness(seg_name, output_name_stem, part=None):
         endo_contour = approximate_contour(endo_contour, periodic=True)
         epi_contour = approximate_contour(epi_contour, periodic=True)
 
-        # A polydata representation of the epicardial contour
+        # A polydata representation of the epicardial contour. The locator below
+        # uses these physical-space points to find the closest epicardial sample.
         epi_points_z = vtk.vtkPoints()
         for y, x in epi_contour:
             p = np.dot(affine, np.array([x, y, z, 1]))[:3]
@@ -278,7 +335,8 @@ def evaluate_wall_thickness(seg_name, output_name_stem, part=None):
         writer.SetInputData(epi_poly)
         writer.Write()
 
-    # Evaluate the wall thickness per AHA segment and save to a csv file
+    # Evaluate the wall thickness per AHA segment and save to csv files. The
+    # final row stores the global value over all assigned contour points.
     table_thickness = np.zeros(17)
     table_thickness_max = np.zeros(17)
     np_thickness = numpy_support.vtk_to_numpy(thickness).astype(np.float32)
@@ -299,9 +357,23 @@ def evaluate_wall_thickness(seg_name, output_name_stem, part=None):
 
 
 def determine_aha_coordinate_system(seg_sa, affine_sa):
-    """ Determine the AHA coordinate system using the mid-cavity slice
-        of the short-axis image segmentation.
-        """
+    """Determine the AHA coordinate system from the mid-cavity short-axis slice.
+
+    The coordinate system is anchored at the LV cavity centre. The septal
+    direction is estimated from the LV epicardial contour points that intersect
+    a dilated RV mask; the apex-to-base direction comes from the slice axis in
+    the NIfTI affine.
+
+    Args:
+        seg_sa (np.ndarray): Short-axis segmentation array with shape
+            ``(X, Y, Z[, ...])``.
+        affine_sa (np.ndarray): 4x4 affine mapping voxel indices to world
+            coordinates.
+
+    Returns:
+        dict: Unit vectors named ``"lv_to_sep"``, ``"apex_to_base"``, and
+        ``"inf_to_ant"``.
+    """
     # Label class in the segmentation
     label = {'BG': 0, 'LV': 1, 'Myo': 2, 'RV': 3}
 
@@ -343,7 +415,8 @@ def determine_aha_coordinate_system(seg_sa, affine_sa):
     cx, cy = [np.mean(x) for x in np.nonzero(endo)]
     point_cavity = np.dot(affine_sa, np.array([cx, cy, z, 1]))[:3]
 
-    # Determine the AHA coordinate system
+    # Determine the AHA coordinate system. The cross product completes an
+    # orthogonal frame used later to convert contour points into angular sectors.
     axis = {}
     axis['lv_to_sep'] = point_septum - point_cavity
     axis['lv_to_sep'] /= np.linalg.norm(axis['lv_to_sep'])
@@ -356,7 +429,24 @@ def determine_aha_coordinate_system(seg_sa, affine_sa):
 
 
 def determine_aha_part(seg_sa, affine_sa, three_slices=False):
-    """ Determine the AHA part for each slice. """
+    """Assign short-axis slices to basal, mid-cavity, and apical AHA parts.
+
+    Slices with sufficient LV cavity and myocardium are ordered from base to
+    apex using their physical z-coordinate. The ordered list is then divided
+    into thirds, or reduced to one representative basal/mid/apical slice when
+    ``three_slices`` is True.
+
+    Args:
+        seg_sa (np.ndarray): Short-axis segmentation array.
+        affine_sa (np.ndarray): 4x4 affine mapping voxel indices to world
+            coordinates.
+        three_slices (bool): If True, return only representative basal, mid,
+            and apical slices; otherwise assign all valid slices.
+
+    Returns:
+        dict: Mapping from slice index to ``"basal"``, ``"mid"``, or
+        ``"apical"``.
+    """
     # Label class in the segmentation
     label = {'BG': 0, 'LV': 1, 'Myo': 2, 'RV': 3}
 
@@ -423,12 +513,29 @@ def determine_aha_part(seg_sa, affine_sa, three_slices=False):
 
 
 def determine_aha_segment_id(point, lv_centre, aha_axis, part):
-    """ Determine the AHA segment ID given a point,
-        the LV cavity center and the coordinate system.
-        """
+    """Determine the AHA segment ID for a contour point.
+
+    The point is projected onto the AHA in-plane axes, converted to an angle,
+    and assigned to one of the standard 16 LV myocardial segments. The optional
+    ``"apex"`` part maps directly to segment 17.
+
+    Args:
+        point (np.ndarray): 3D point in physical/world coordinates.
+        lv_centre (np.ndarray): 3D LV cavity centre in physical/world
+            coordinates.
+        aha_axis (dict): Coordinate frame returned by
+            :func:`determine_aha_coordinate_system`.
+        part (str): One of ``"basal"``, ``"mid"``, ``"apical"``, or
+            ``"apex"``.
+
+    Returns:
+        int: AHA segment identifier.
+    """
     d = point - lv_centre
     x = np.dot(d, aha_axis['inf_to_ant'])
     y = np.dot(d, aha_axis['lv_to_sep'])
+    # atan2 gives a signed in-plane angle, which is then thresholded according
+    # to the standard basal/mid six-segment and apical four-segment layouts.
     deg = math.degrees(math.atan2(y, x))
     seg_id = 0
 
@@ -485,20 +592,20 @@ def determine_aha_segment_id(point, lv_centre, aha_axis, part):
 
 
 def approximate_contour(contour, factor=4, smooth=0.05, periodic=False):
-    """ Approximate a contour.
+    """Approximate a contour with smoothed spline interpolation.
 
-        contour: input contour
-        factor: upsampling factor for the contour
-        smooth: smoothing factor for controling the number of spline knots.
-                Number of knots will be increased until the smoothing
-                condition is satisfied:
-                sum((w[i] * (y[i]-spl(x[i])))**2, axis=0) <= s
-                which means the larger s is, the fewer knots will be used,
-                thus the contour will be smoother but also deviating more
-                from the input contour.
-        periodic: set to True if this is a closed contour, otherwise False.
+    Args:
+        contour (np.ndarray): Input contour with shape ``(N, 2)``.
+        factor (int): Upsampling factor for the output contour.
+        smooth (float): Smoothing factor controlling the number of spline
+            knots. More smoothing generally uses fewer knots and can deviate
+            further from the input contour.
+        periodic (bool): Set to True for closed contours so that padding wraps
+            around the contour endpoints.
 
-        return the upsampled and smoothed contour
+    Returns:
+        np.ndarray: Upsampled and smoothed contour with shape
+        ``(N * factor, 2)``.
     """
     # The input contour
     N = len(contour)
@@ -532,7 +639,19 @@ def approximate_contour(contour, factor=4, smooth=0.05, periodic=False):
 
 
 def atrium_pass_quality_control(label, label_dict):
-    """ Quality control for atrial volume estimation """
+    """Run quality control checks for atrial volume estimation labels.
+
+    The checks verify that each requested atrial label is present at every time
+    frame, is not split into multiple large connected components, and does not
+    undergo abrupt frame-to-frame area changes.
+
+    Args:
+        label (np.ndarray): 4D label array, typically ``(X, Y, Z, T)``.
+        label_dict (dict): Mapping from label name to integer label value.
+
+    Returns:
+        bool: True if all requested atrial labels pass QC; otherwise False.
+    """
     for l_name, l in label_dict.items():
         # Criterion 1: the atrium does not disappear at any time point so that we can
         # measure the area and length.
@@ -571,7 +690,24 @@ def atrium_pass_quality_control(label, label_dict):
 
 
 def evaluate_atrial_area_length(label, nim, long_axis):
-    """ Evaluate the atrial area and length from 2 chamber or 4 chamber view images. """
+    """Evaluate atrial area and long-axis length from 2CH or 4CH views.
+
+    For each non-background label, the largest connected component is retained.
+    The area is computed from pixel spacing, and the length is estimated from
+    the intersection between the atrial mask and an inferred major axis.
+
+    Args:
+        label (np.ndarray): 2D atrial label image.
+        nim (nib.Nifti1Image): Source image object providing affine and header
+            spacing information.
+        long_axis (np.ndarray): 3D unit vector defining the long-axis direction
+            in physical coordinates.
+
+    Returns:
+        tuple: ``(A, L, landmarks)`` where ``A`` contains areas in cm^2, ``L``
+        contains lengths in cm, and ``landmarks`` contains endpoint coordinates.
+        Returns ``(-1, -1, -1)`` when the length geometry cannot be estimated.
+    """
     # Area per pixel
     pixdim = nim.header['pixdim'][1:4]
     area_per_pix = pixdim[0] * pixdim[1] * 1e-2  # Unit: cm^2
@@ -608,11 +744,13 @@ def evaluate_atrial_area_length(label, nim, long_axis):
         bottom_points = points[:int(n_points / 3)]
         bx, by, _ = np.mean(bottom_points, axis=0)
 
-        # Determine the major axis by connecting the geometric centre and the bottom centre
+        # Determine the major axis by connecting the top-region centre and the
+        # bottom-region centre of the atrial mask.
         major_axis = np.array([cx - bx, cy - by])
         major_axis = major_axis / np.linalg.norm(major_axis)
 
-        # Get the intersection between the major axis and the atrium contour
+        # Get the intersection between the major axis and the atrium contour by
+        # drawing a long line through the mask in image index coordinates.
         px = cx + major_axis[0] * 100
         py = cy + major_axis[1] * 100
         qx = cx - major_axis[0] * 100

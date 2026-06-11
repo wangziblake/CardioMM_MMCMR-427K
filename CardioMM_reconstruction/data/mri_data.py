@@ -36,6 +36,15 @@ import yaml
 
 
 class CMRxReconRawDataSample(NamedTuple):
+    """
+    Metadata record for one flattened CMRxRecon slice sample.
+
+    Attributes:
+        fname: Path to the HDF5 file containing the sample.
+        slice_ind: Flattened slice index into the HDF5 k-space/reconstruction arrays.
+        metadata: HDF5 attributes copied from the source file.
+    """
+
     fname: Path
     slice_ind: int
     metadata: Dict[str, Any]
@@ -43,7 +52,11 @@ class CMRxReconRawDataSample(NamedTuple):
 
 class CombinedCmrxReconSliceDataset(torch.utils.data.Dataset):
     """
-    A container for combining slice datasets.
+    Container that concatenates multiple CMRxRecon slice datasets.
+
+    Each root/challenge/transform entry is wrapped in a ``CmrxReconSliceDataset``.
+    Global indices are dispatched to the corresponding local dataset at access
+    time.
     """
 
     def __init__(
@@ -88,6 +101,7 @@ class CombinedCmrxReconSliceDataset(torch.utils.data.Dataset):
                 metadata as input and returns a boolean indicating whether the
                 raw_sample should be included in the dataset.
         """
+        # Combined datasets support either slice-level or volume-level sampling, not both.
         if sample_rates is not None and volume_sample_rates is not None:
             raise ValueError(
                 "either set sample_rates (sample by slices) or volume_sample_rates (sample by volumes) but not both"
@@ -129,9 +143,16 @@ class CombinedCmrxReconSliceDataset(torch.utils.data.Dataset):
             self.raw_samples = self.raw_samples + self.datasets[-1].raw_samples
 
     def __len__(self):
+        """Return the total number of samples across all child datasets."""
         return sum(len(dataset) for dataset in self.datasets)
 
     def __getitem__(self, i):
+        """
+        Return the sample at global index ``i``.
+
+        The index is walked through child datasets until the owning dataset is
+        found, then delegated to that dataset's ``__getitem__``.
+        """
         for dataset in self.datasets:
             if i < len(dataset):
                 return dataset[i]
@@ -140,6 +161,15 @@ class CombinedCmrxReconSliceDataset(torch.utils.data.Dataset):
 
 
 class CmrxReconSliceDataset(torch.utils.data.Dataset):
+    """
+    Slice-level CMRxRecon dataset backed by HDF5 files.
+
+    The dataset scans a root directory and related modality directories, creates
+    one raw sample per flattened slice/frame, optionally caches metadata,
+    filters or subsamples samples, and applies an optional transform at access
+    time.
+    """
+
     def __init__(
         self,
         root: Union[str, Path, os.PathLike],
@@ -179,10 +209,13 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
             raw_sample_filter: Optional; A callable object that takes an raw_sample
                 metadata as input and returns a boolean indicating whether the
                 raw_sample should be included in the dataset.
+            num_adj_slices: Number of adjacent slices to load. It must be odd;
+                the current frame-index helper returns one central slice.
         """
         if challenge not in ("singlecoil", "multicoil"):
             raise ValueError('challenge should be either "singlecoil" or "multicoil"')
 
+        # A dataset can be subsampled by slices or volumes, but not both at once.
         if sample_rate is not None and volume_sample_rate is not None:
             raise ValueError(
                 "either set sample_rate (sample by slices) or volume_sample_rate (sample by volumes) but not both"
@@ -195,11 +228,13 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
         assert num_adj_slices % 2 == 1, "Number of adjacent slices must be odd in SliceDataset" 
         self.num_adj_slices = num_adj_slices
 
+        # Reconstruction target key follows the fastMRI singlecoil/multicoil convention.
         self.recons_key = (
             "reconstruction_esc" if challenge == "singlecoil" else "reconstruction_rss"
         )
         self.raw_samples = []
         if raw_sample_filter is None:
+            # By default, keep every raw sample discovered in the dataset.
             self.raw_sample_filter = lambda raw_sample: True
         else:
             self.raw_sample_filter = raw_sample_filter
@@ -210,7 +245,7 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
         if volume_sample_rate is None:
             volume_sample_rate = 1.0
 
-        # load dataset cache if we have and user wants to use it
+        # Load dataset cache if it exists and the caller requested cache usage.
         if self.dataset_cache_file.exists() and use_dataset_cache:
             with open(self.dataset_cache_file, "rb") as f:
                 dataset_cache = pickle.load(f)
@@ -226,12 +261,14 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
             # TODO: include all modality data !!! The original root directory: 'Cine'
             replace_targets = ['Mapping', 'Aorta', 'Tagging', 'Flow2d', 'BlackBlood',
                                'LGE', 'Perfusion', 'T1rho', 'T1w', 'T2w']  # 11 main modalities
+            # Expand the Cine root to other modality roots using the current folder naming convention.
             base_dirs = [str(root).replace('Cine', target) for target in replace_targets]
             base_dirs.insert(0, root)  # Include the original root directory: 'Cine'
             files = sorted(chain.from_iterable(map(get_all_files, base_dirs)))
 
             for fname in sorted(files): 
                 with h5py.File(fname, 'r') as hf:
+                    # The first k-space dimension is the flattened slice/frame index.
                     num_slices = hf["kspace"].shape[0]
                     metadata = {**hf.attrs}
                 new_raw_samples = []
@@ -244,6 +281,7 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
             if dataset_cache.get(root) is None and use_dataset_cache:
                 dataset_cache[root] = self.raw_samples
                 logging.info(f"Saving dataset cache to {self.dataset_cache_file}.")
+                # Cache raw sample metadata to avoid rescanning all HDF5 files next time.
                 with open(self.dataset_cache_file, "wb") as cache_f:
                     pickle.dump(dataset_cache, cache_f)
         else:
@@ -252,6 +290,7 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
 
         # balance the different type of training data 
         if 'train' in str(root):
+            # Placeholder for balancing logic; currently preserves all samples unchanged.
             raw_samples = []
             for ii in self.raw_samples:
                 raw_samples.append(ii)
@@ -259,10 +298,12 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
 
         # subsample if desired
         if sample_rate < 1.0:  # sample by slice
+            # Slice-level sampling shuffles all raw samples and keeps a fraction.
             random.shuffle(self.raw_samples)
             num_raw_samples = round(len(self.raw_samples) * sample_rate)
             self.raw_samples = self.raw_samples[:num_raw_samples]
         elif volume_sample_rate < 1.0:  # sample by volume
+            # Volume-level sampling keeps all slices from selected HDF5 stems.
             vol_names = sorted(list(set([f[0].stem for f in self.raw_samples])))
             random.shuffle(vol_names)
             num_volumes = round(len(vol_names) * volume_sample_rate)
@@ -274,6 +315,7 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
             ]
 
         if num_cols:
+            # Optional filter by encoded width stored in metadata.
             self.raw_samples = [
                 ex
                 for ex in self.raw_samples
@@ -281,10 +323,22 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
             ]
 
     def _get_frames_indices(self, dataslice, num_slices_in_volume, num_t_in_volume=None):
-        '''
-        when we reshape t, z to one axis in preprocessing, we need to get the indices of the slices in the original t, z axis;
-        then find the adjacent slices in the original z axis
-        '''
+        """
+        Map a flattened frame index back to original time/slice coordinates.
+
+        During preprocessing, time ``t`` and slice ``z`` can be flattened into
+        one leading axis. This helper recovers the original ``t`` and ``z`` for
+        the requested index, then returns the flattened indices to load. The
+        current implementation returns only the central/current slice.
+
+        Args:
+            dataslice: Flattened sample index.
+            num_slices_in_volume: Number of z-slices per time point.
+            num_t_in_volume: Number of time points in the original volume.
+
+        Returns:
+            List of flattened frame indices to read from the HDF5 k-space array.
+        """
         ti = dataslice//num_slices_in_volume
         zi = dataslice - ti*num_slices_in_volume
 
@@ -300,9 +354,21 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
         return output_list
 
     def __len__(self):
+        """Return the number of raw slice samples available after filtering."""
         return len(self.raw_samples)
     
     def __getitem__(self, i: int):
+        """
+        Load one sample and optionally apply the configured transform.
+
+        Args:
+            i: Index into ``self.raw_samples``.
+
+        Returns:
+            If ``self.transform`` is ``None``, returns the raw tuple
+            ``(kspace, mask, target, attrs, fname, dataslice)``. Otherwise,
+            returns the transformed sample produced by ``self.transform``.
+        """
         fname, dataslice, metadata = self.raw_samples[i]
 
         kspace = []
@@ -312,6 +378,7 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
             target = hf[self.recons_key][dataslice] if self.recons_key in hf else None
             attrs = dict(hf.attrs)
 
+            # Original shape records whether the flattened axis came from [t, z] or only [z].
             if len(attrs['shape']) == 5:
                 num_slices = attrs['shape'][1]
                 num_t = attrs['shape'][0]
@@ -322,11 +389,13 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
             slice_idx_list = self._get_frames_indices(dataslice, num_slices, num_t)
             for idx in slice_idx_list:
                 kspace.append(kspace_volume[idx])
+            # Concatenate selected frames along the coil/channel axis for downstream transforms.
             kspace = np.concatenate(kspace, axis=0)
 
         if self.transform is None:
             sample = (kspace, mask, target, attrs, str(fname), dataslice)
         else:
+            # Transform handles masking, tensor conversion, metadata text, and target packaging.
             sample = self.transform(kspace, mask, target, attrs, str(fname), dataslice)
 
         return sample

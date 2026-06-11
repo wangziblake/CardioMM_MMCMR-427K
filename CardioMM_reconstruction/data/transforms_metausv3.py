@@ -29,15 +29,18 @@ def to_tensor(data: np.ndarray) -> torch.Tensor:
     Convert numpy array to PyTorch tensor.
 
     For complex arrays, the real and imaginary parts are stacked along the last
-    dimension.
+    dimension so complex data becomes ``[..., 2]``.
 
     Args:
-        data: Input numpy array.
+        data: Input numpy array. Complex arrays are converted to a real-valued
+            array with the final dimension storing real and imaginary parts.
 
     Returns:
-        PyTorch version of data.
+        PyTorch tensor sharing the NumPy data layout after optional complex
+        conversion.
     """
     if np.iscomplexobj(data):
+        # fastMRI-style tensors store complex values as real/imag components in the last dimension.
         data = np.stack((data.real, data.imag), axis=-1)
 
     return torch.from_numpy(data)
@@ -59,8 +62,10 @@ def apply_mask(
             final dimension has size 2 (for complex values).
         mask_func: A function that takes a shape (tuple of ints) and a random
             number seed and returns a mask.
+        offset: Optional mask offset used by equispaced mask functions.
         seed: Seed for the random number generator.
-        padding: Padding value to apply for mask.
+        padding: Optional left/right acquisition bounds. Columns outside this
+            interval are forced to zero in the mask.
 
     Returns:
         tuple containing:
@@ -68,13 +73,19 @@ def apply_mask(
             mask: The generated mask.
             num_low_frequencies: The number of low-resolution frequency samples
                 in the mask.
+            acceleration: The acceleration selected by ``mask_func``.
+            mask_type: Downstream mask family string such as ``"random"``,
+                ``"uniform"``, or ``"radial"``.
     """
+    # Collapse leading dimensions to singleton entries so the mask broadcasts over coils/slices.
     shape = (1,) * len(data.shape[:-3]) + tuple(data.shape[-3:])
     mask, num_low_frequencies, acceleration, mask_type = mask_func(shape, offset, seed)
     if padding is not None:
+        # Remove samples outside the acquired readout range stored in HDF5 attrs.
         mask[..., : padding[0], :] = 0
         mask[..., padding[1] :, :] = 0  # padding value inclusive on right of zeros
 
+    # The + 0.0 removes negative zero signs introduced by masked complex values.
     masked_data = data * mask + 0.0  # the + 0.0 removes the sign of the zeros
 
     return masked_data, mask, num_low_frequencies, acceleration, mask_type
@@ -94,6 +105,9 @@ class CardioMMSample(NamedTuple):
         slice_num: The slice index.
         max_value: Maximum image value.
         crop_size: The size to crop the final image.
+        metadata: Tokenizer output dictionary for acquisition metadata text.
+        usdata: Tokenizer output dictionary for undersampling-description text.
+        mask_type: Undersampling family string used by the model.
     """
 
     masked_kspace: torch.Tensor
@@ -112,6 +126,11 @@ class CardioMMSample(NamedTuple):
 class CardioMMDataTransform:
     """
     Data Transformer for training CardioMM models.
+
+    This transform converts raw HDF5 k-space, target, attributes, filename, and
+    slice index into a ``CardioMMSample`` consumed by ``CardioMM_Module``. It can
+    apply a generated undersampling mask, build metadata and undersampling text,
+    tokenize both text inputs, and package target/crop information.
     """
 
     def __init__(self, mask_func: Optional[MaskFunc] = None, llm_model_name: Optional[str] = "../bge-micro-v2", use_seed: bool = True):
@@ -119,6 +138,8 @@ class CardioMMDataTransform:
         Args:
             mask_func: Optional; A function that can create a mask of
                 appropriate shape. Defaults to None.
+            llm_model_name: Hugging Face model name or local tokenizer path used
+                to tokenize metadata and undersampling descriptions.
             use_seed: If True, this class computes a pseudo random number
                 generator seed from the filename. This ensures that the same
                 mask is used for all the slices of a given volume every time.
@@ -126,6 +147,7 @@ class CardioMMDataTransform:
         self.mask_func = mask_func
         self.use_seed = use_seed
         self.llm_model_name = llm_model_name
+        # Tokenizer outputs dictionaries later consumed by LanguageModel_NoAutoTokenizer.
         self.tokenizer = AutoTokenizer.from_pretrained(self.llm_model_name)
 
     def __call__(
@@ -148,9 +170,9 @@ class CardioMMDataTransform:
             slice_num: Serial number of the slice.
 
         Returns:
-            A tuple containing, zero-filled input image, the reconstruction
-            target, the mean used for normalization, the standard deviations
-            used for normalization, the filename, and the slice number.
+            ``CardioMMSample`` containing masked k-space, mask metadata, target,
+            crop metadata, tokenized acquisition metadata text, tokenized
+            undersampling text, and mask type.
         """
 
         if target is not None:
@@ -161,9 +183,12 @@ class CardioMMDataTransform:
             max_value = 0.0
 
         kspace_torch = to_tensor(kspace)
+        # Filename-derived seed makes validation/test masks deterministic per volume.
         seed = None if not self.use_seed else tuple(map(ord, fname))  # so in validation, the same fname (volume) will have the same acc
         acq_start = 0
+        # padding_right marks the acquired k-space boundary used to zero the mask.
         acq_end = attrs["padding_right"]
+        # recon_size is the target image crop size expected by downstream evaluation.
         crop_size = (attrs["recon_size"][0], attrs["recon_size"][1])
 
         if self.mask_func is not None:
@@ -185,21 +210,26 @@ class CardioMMDataTransform:
             metadata_modality, metadata_view = attrs['modality'], attrs['view']
             metadata_field, metadata_vendor, metadata_scanner = attrs['field'], attrs['vendor'], attrs['scanner']
             # metadata_medcon = attrs['medcon']  # [healthy, HCM, ..., or unknown]
+            # Current metadata text excludes disease/medical condition by design.
             ori_metadata = f"{metadata_lifespan} {metadata_task}." \
                            f"Vendor: {metadata_field}, {metadata_vendor}, {metadata_scanner}. " \
                            f"Modality: {metadata_modality}, {metadata_view}. " \
                            # f"Disease: {metadata_medcon}."
+            # Normalize whitespace before tokenization to keep prompts compact and stable.
             metadata_tuple = re.sub(r'\s+', ' ', ori_metadata.strip()).replace("\n", "")
             metadata_list = [metadata_tuple]  # tuple -> list as input
 
             # USdata: Default value should be unknown
             # -- Undersampling pattern, AF
+            # Build a separate undersampling prompt from acceleration and mask family.
             metadata_af = str(acceleration) + "x"  # "4x", "8x", "10x", "12x", "16x"
             metadata_us = mask_type  # "random", "uniform", "radial"
             ori_usdata = f"Undersampling: {metadata_af} {metadata_us}."
+            # Normalize whitespace before tokenization to keep prompts compact and stable.
             usdata_tuple = re.sub(r'\s+', ' ', ori_usdata.strip()).replace("\n", "")
             usdata_list = [usdata_tuple]  # tuple -> list as input
 
+            # Tokenizer returns input_ids/attention_mask dictionaries for the frozen text encoder.
             metadata = self.tokenizer(metadata_list, padding=True, max_length=512, truncation=True, return_tensors="pt")  # text including metadata for tensor input
             usdata = self.tokenizer(usdata_list, padding=True, max_length=512, truncation=True, return_tensors="pt")  # text including usdata for tensor input
 
@@ -218,12 +248,14 @@ class CardioMMDataTransform:
             )
 
         else:
+            # No generated mask: use the dataset-provided mask and skip text prompts.
             masked_kspace = kspace_torch
             shape = np.array(kspace_torch.shape)
             num_cols = shape[-2]
             shape[:-3] = 1
             mask_shape = [1] * len(shape)
             mask_shape[-2] = num_cols
+            # Reshape the provided 1D mask so it broadcasts over k-space dimensions.
             mask_torch = torch.from_numpy(mask.reshape(*mask_shape).astype(np.float32))
             mask_torch = mask_torch.reshape(*mask_shape)
             mask_torch[:, :, :acq_start] = 0

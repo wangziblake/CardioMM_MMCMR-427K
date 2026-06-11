@@ -1,5 +1,11 @@
 """
-Calculate the ventricular volume from gt sax .nii.gz - pytorch - CMRxReconAll
+Calculate ventricular clinical measures from ground-truth SAX segmentations.
+
+This script scans short-axis CMRxReconAll segmentation files, loads the
+pre-extracted ED/ES labels, computes LV/RV volumes and derived ventricular
+metrics, and stores the results in a CSV file. The expected segmentation label
+convention is LV cavity = 1, myocardium = 2, and RV cavity = 3.
+
 Created on 2025/08/17
 @author: Zi Wang
 Modified from Wenjia Bai's code (https://github.com/baiwenjia/ukbb_cardiac)
@@ -16,6 +22,18 @@ from tqdm import tqdm
 
 
 def replace_mask_to_find_datatype_undersample_af(mask_filename):
+    """Infer datatype, mask type, and acceleration factor from a label filename.
+
+    Ground-truth SOS segmentations are treated as fully sampled data, so the
+    mask and acceleration factor are fixed to ``"Full"`` and ``"1"``.
+
+    Args:
+        mask_filename (str): Segmentation filename such as
+            ``"cine_sax_label.nii.gz"``.
+
+    Returns:
+        tuple: ``(datatype, mask, af)`` parsed from the filename and GT setting.
+    """
     base, ext = mask_filename.rsplit(".", 1)  # 'cine_sax_label.nii', '.gz'
     datatype = base.rsplit("_label", 1)[0]  # 'cine_sax'
     mask, af = 'Full', '1'
@@ -23,6 +41,22 @@ def replace_mask_to_find_datatype_undersample_af(mask_filename):
 
 
 def extract_attrs(save_path, medcon=None):
+    """Extract metadata fields encoded in a CMRxReconAll segmentation path.
+
+    The path layout is assumed to follow
+    ``.../<Modality>/<Set>/GTSOS_NII/<Center>/<Scanner>/<Patient>/<File>``.
+    Scanner names are expected to contain vendor, field strength, and scanner
+    model separated by underscores.
+
+    Args:
+        save_path (str): Full path to a segmentation NIfTI file.
+        medcon (str, optional): Medical condition override. If None, a simple
+            centre-based fallback is used.
+
+    Returns:
+        tuple: ``(modality, center, vendor, field_strength, pfolder, datatype,
+        mask, af, medcon)`` for CSV reporting.
+    """
     # save_path: "../Cine/TestSet/GTSOS_NII/Center015/Siemens_30T_Vida/P031/cine_sax_label.nii.gz"
     path_parts = save_path.split(os.sep)
     modality = path_parts[-7]  # 'Cine'
@@ -45,20 +79,20 @@ def extract_attrs(save_path, medcon=None):
 
 
 def add_or_update_row(ranks, new_row, check_cols, criteria_cols):
-    """
-    This function checks if a row with the same 'check_cols' values already exists in the DataFrame 'ranks'.
-    If it exists and only the criteria are different, it updates the criteria.
-    If the entire row (including criteria) is the same, it skips adding the row.
-    If the row doesn't exist, it adds the new row to the DataFrame.
+    """Add a new result row or update existing metric columns in-place.
 
-    Parameters:
-    ranks (pd.DataFrame): The DataFrame containing previous records.
-    new_row (dict): The new row to be added or checked for duplication.
-    check_cols (list): The list of columns to check for duplicate rows (non-criteria columns).
-    criteria_cols (list): The list of columns to update if they are different (criteria columns like 'PSNR', 'SSIM', 'NMSE').
+    Rows are considered the same case/method entry when all columns in
+    ``check_cols`` match. If such a row already exists, only the clinical metric
+    columns in ``criteria_cols`` are refreshed; otherwise the row is appended.
+
+    Args:
+        ranks (pd.DataFrame): Existing result table.
+        new_row (dict): Candidate row containing metadata and metric values.
+        check_cols (list): Metadata columns used to identify duplicate records.
+        criteria_cols (list): Metric columns to update for an existing record.
 
     Returns:
-    pd.DataFrame: The updated DataFrame with the new row or updated criteria.
+        pd.DataFrame: Updated result table.
     """
     new_df = pd.DataFrame([new_row])
     for col in check_cols:
@@ -83,6 +117,22 @@ def add_or_update_row(ranks, new_row, check_cols, criteria_cols):
 
 
 def process_case(f, RootDir, evaluate_set, medcon):
+    """Compute ventricular metrics for a list of segmentation files.
+
+    For each 4D SAX segmentation, the function loads the matching ED and ES
+    segmentation files, calculates voxel-volume-based LV/RV metrics, and writes
+    or updates a CSV file under ``CalClinicalMeasure``.
+
+    Args:
+        f (list): Segmentation file paths to process.
+        RootDir (str): Root segmentation directory used to derive the CSV
+            output directory.
+        evaluate_set (str): Dataset split name included in the output filename.
+        medcon (str): Medical condition value passed to ``extract_attrs``.
+
+    Returns:
+        None: Results are written to a CSV file.
+    """
     csvdir = RootDir.replace('SegNII', 'CalClinicalMeasure')
     save_path = os.path.join(csvdir, f'CliCal_{evaluate_set}_VentricularVolume_GTSOS.csv')
     # 0. load previous saved .csv file, if possible
@@ -105,7 +155,7 @@ def process_case(f, RootDir, evaluate_set, medcon):
     criteria_cols = ['LVEDV (mL)', 'LVESV (mL)', 'LVSV (mL)', 'LVEF (%)', 'LVCO (L/min)', 'LVM (g)',
                      'RVEDV (mL)', 'RVESV (mL)', 'RVSV (mL)', 'RVEF (%)']
 
-    # 1. evaluate segmentation images
+    # 1. Evaluate segmentation images.
     for ff in tqdm(f, desc='files'):
         print('-- processing --', ff)
         # gtff example: /{gtinput_dir}/Cine/TestSet/GTSOS/Center015/Siemens_30T_Vida/P301/cine_sax_label.nii.gz
@@ -116,13 +166,15 @@ def process_case(f, RootDir, evaluate_set, medcon):
         seg_ED_name = ff.replace('_label.nii.gz', '_label_ED.nii.gz')
         seg_ES_name = ff.replace('_label.nii.gz', '_label_ES.nii.gz')
 
-        # data shape
+        # Voxel volume is converted from mm^3 to mL. Myocardial mass uses the
+        # conventional myocardial density of 1.05 g/mL.
         seg4D = nib.load(seg4D_name)
         pixdim = seg4D.header['pixdim'][1:4]
         volume_per_pix = pixdim[0] * pixdim[1] * pixdim[2] * 1e-3
         density = 1.05
 
-        # heart rate
+        # Heart rate is derived from the temporal spacing and number of frames.
+        # UIH data uses a correction factor noted in the original pipeline.
         if 'UIH' in ff:
             duration_per_cycle = seg4D.header['dim'][4] * (seg4D.header['pixdim'][4] * 10)  # TODO: some mistakes in temporal resolution of UIH data, so use *10 here
             heart_rate = 60.0 / duration_per_cycle
@@ -130,31 +182,36 @@ def process_case(f, RootDir, evaluate_set, medcon):
             duration_per_cycle = seg4D.header['dim'][4] * seg4D.header['pixdim'][4]
             heart_rate = 60.0 / duration_per_cycle
 
-        # segmentation - ED ES
+        # Load the pre-extracted ED and ES segmentation volumes.
         seg_ED_data = nib.load(seg_ED_name).get_fdata()
         seg_ES_data = nib.load(seg_ES_name).get_fdata()
 
         print('-- start calculating --', ff)
         val = {}
-        # Clinical measures - ED
+        # Clinical measures at ED: LV cavity volume, LV myocardial mass, and RV
+        # cavity volume.
         val['LVEDV'] = np.sum(seg_ED_data == 1) * volume_per_pix
         val['LVEDM'] = np.sum(seg_ED_data == 2) * volume_per_pix * density
         val['RVEDV'] = np.sum(seg_ED_data == 3) * volume_per_pix
 
-        # Clinical measures - ES
+        # Clinical measures at ES using the same label convention.
         val['LVESV'] = np.sum(seg_ES_data == 1) * volume_per_pix
         val['LVESM'] = np.sum(seg_ES_data == 2) * volume_per_pix * density
         val['RVESV'] = np.sum(seg_ES_data == 3) * volume_per_pix
 
+        # Derived LV measures: stroke volume, cardiac output, and ejection
+        # fraction.
         val['LVSV'] = val['LVEDV'] - val['LVESV']
         val['LVCO'] = val['LVSV'] * heart_rate * 1e-3
         val['LVEF'] = val['LVSV'] / val['LVEDV'] * 100
 
+        # Derived RV measures: stroke volume, cardiac output, and ejection
+        # fraction. RVCO is calculated for completeness but is not saved below.
         val['RVSV'] = val['RVEDV'] - val['RVESV']
         val['RVCO'] = val['RVSV'] * heart_rate * 1e-3
         val['RVEF'] = val['RVSV'] / val['RVEDV'] * 100
 
-        # save the evaluation results to the pandas frame
+        # Save the evaluation results to the pandas frame.
         new_row = {'Method': 'GTSOS', 'Modality': modality, 'Task': 'TaskAll', 'Center': center, 'Vendor': vendor,
                    'Field': field_strength,
                    'Pfolder': pfolder, 'Datatype': datatype, 'Mask': mask, 'AF': af, 'Medcon': medcon,
@@ -166,7 +223,7 @@ def process_case(f, RootDir, evaluate_set, medcon):
         ranks = add_or_update_row(ranks, new_row, check_cols, criteria_cols)
         print('-- end calculating --', ff)
 
-    # 2. save results to .csv
+    # 2. Save results to .csv.
     if not os.path.isdir(csvdir):
         os.makedirs(csvdir)
     ranks.to_csv(save_path, index=False)
@@ -181,6 +238,8 @@ if __name__ == "__main__":
 
     EXCLUDED_KEYWORDS = ['Center010', 'Center007', 'Center012', '055T', '50T']  # Exclude specific centers (pediatric) or scanners (low/ultra high-field)
 
+    # Map each supported modality to the segmentation filename pattern used for
+    # recursive discovery. Only the selected modality is populated below.
     modalities = {
         'Cine': 'cine_sax*_label.nii.gz',
     }
@@ -188,6 +247,8 @@ if __name__ == "__main__":
 
     for modal, pattern in modalities.items():
         if modality == modal:
+            # Keep only GT SOS NIfTI files from the requested evaluation split,
+            # while excluding centres/scanners that should not enter this run.
             file_dict[modal] = sorted([
                 file for file in glob.glob(os.path.join(RootDir, f'**/{pattern}'), recursive=True)
                 if all(x in file for x in ['GTSOS_NII', modal, evaluate_set])
@@ -200,4 +261,5 @@ if __name__ == "__main__":
     print(f'Total files: {len(f)}')
     print('##############')
 
+    # Process all discovered files and update the ventricular-volume CSV.
     process_case(f, RootDir, evaluate_set, medcon='')

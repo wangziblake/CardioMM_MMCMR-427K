@@ -9,6 +9,8 @@ If you want to use this code, please cite our relevant papers in the GitHub page
 import os
 import sys
 import pathlib
+# Make repository-local modules importable when this script is launched from
+# the nested maincode/prepare_cmr directory.
 sys.path.insert(0, os.path.dirname(os.path.dirname(pathlib.Path(__file__).parent.absolute())))
 
 import argparse
@@ -24,8 +26,25 @@ from evaluate_utils import image_halfcropnx
 
 
 def replace_mask_to_find_data(mask_filename):
+    """Convert a mask filename into the corresponding full-sample data filename.
+
+    CMRxReconAll mask files include an undersampling suffix such as
+    ``_mask_ktGaussian16`` before the extension. The full-sample file uses the
+    same prefix without the ``_mask_...`` portion, after the caller has already
+    replaced the ``Mask_<task>`` folder with ``FullSample``.
+
+    Args:
+        mask_filename: Path to a mask-derived ``.mat`` filename.
+
+    Returns:
+        The matching full-sample ``.mat`` filename.
+
+    Raises:
+        NotImplementedError: If the input filename does not contain ``_mask_``.
+    """
     if "_mask_" in mask_filename:
         base, ext = mask_filename.rsplit(".", 1)
+        # Drop the mask-pattern suffix while preserving the original extension.
         base = base.rsplit("_mask_", 1)[0]
         data_filename = f"{base}.{ext}"
     else:
@@ -34,56 +53,111 @@ def replace_mask_to_find_data(mask_filename):
 
 
 def get_zfdata(fname, task):
-    # here, input kspace from .mat: 5D-[nt, nz, nc, ny, nx] or 4D-[nz, nc, ny, nx] or 3D-[nc, ny, nx]
+    """Load masked data and compute a zero-filled SOS/RSS reconstruction.
+
+    The input ``fname`` is a mask file. The matching full-sample k-space file is
+    inferred by replacing ``Mask_<task>`` with ``FullSample`` and removing the
+    ``_mask_...`` suffix from the filename. K-space is normalized to
+    ``[nt, nz, nc, ny, nx]`` before masking. The mask may be either 2D
+    ``[ny, nx]`` and reused across time, or 3D ``[nt, ny, nx]`` for kt masks.
+
+    Args:
+        fname: Path to the mask ``.mat`` file.
+        task: Task folder suffix used in the ``Mask_<task>`` path component.
+
+    Returns:
+        A squeezed NumPy array in MATLAB-style image layout
+        ``[nx, ny, nz, nt]``, ``[nx, ny, nz]``, or ``[nx, ny]``.
+    """
+    # The data file lives beside the mask path after folder/name conversion.
     data_fname = replace_mask_to_find_data(fname.replace(f'Mask_{task}', 'FullSample'))
     kspace = load_kdata_compatible(data_fname)
     if len(kspace.shape) != 5:
+        # Promote 4D data to [1, nz, nc, ny, nx].
         kspace = np.expand_dims(kspace, axis=0)  # make sure its shape is [1, nz, nc, ny, nx]
         if len(kspace.shape) != 5:
+            # Promote 3D data to [1, 1, nc, ny, nx].
             kspace = np.expand_dims(kspace, axis=0)  # make sure its shape is [1, nz, nc, ny, nx]
     num_t = kspace.shape[0]
     num_slices = kspace.shape[1]
     # here, input mask from .mat: 3D-[nt, ny, nx] or 2D-[ny, nx]
     mask = load_maskdata(fname)
     if len(mask.shape) == 3:
+        # kt masks already contain a time dimension and share one mask per slice/coil.
         mask = np.expand_dims(np.expand_dims(mask, axis=1),axis=2)  # make sure its shape is [nt, 1, 1, ny, nx]
     elif len(mask.shape) == 2:
+        # Static 2D masks are reused for every time frame.
         mask = np.expand_dims(np.expand_dims(np.expand_dims(mask, axis=0), axis=1), axis=2)  # make sure its shape is [1, 1, 1, ny, nx]
         mask = np.tile(mask, reps=(num_t, 1, 1, 1, 1))  # make sure its shape is [nt, 1, 1, ny, nx]
     else:
         raise NotImplementedError("The mask shape should be 2D(k) or 3D(k-t).")
+    # Reuse the same sampling pattern across all slices in the volume.
     mask = np.tile(mask, reps=(1, num_slices, 1, 1, 1))  # make sure its shape is [nt, nz, 1, ny, nx]
 
     masked_kspace = kspace * mask
+    # Centered inverse FFT reconstructs one complex image per coil.
     zfimage_coil = ifft2c(torch.tensor(masked_kspace))
+    # Root-sum-of-squares combines coils into a zero-filled SOS magnitude image.
     zfimage = (zfimage_coil.abs()**2).sum(-3)**0.5  # [nt, nz, ny, nx]
     zfimagesos = zfimage.cpu().numpy()
+    # Save-facing layout follows MATLAB/image convention [nx, ny, nz, nt].
     return np.squeeze(zfimagesos.transpose(3, 2, 1, 0))
 
 
 def ZFpredict(f, center_crop=False, input_dir='', output_dir='', task='TaskAll', image_scale=1, plot_image=False):
+    """Create and save zero-filled SOS reconstructions for mask files.
+
+    Args:
+        f: Iterable of CMRxReconAll mask ``.mat`` files to process.
+        center_crop: If ``True``, remove 2x readout oversampling with
+            ``image_halfcropnx`` after reconstruction.
+        input_dir: Source root used when mirroring paths into ``output_dir``.
+        output_dir: Destination root for generated ZFSOS files.
+        task: Task folder suffix used to map ``Mask_<task>`` to ``FullSample``.
+        image_scale: Compatibility argument for older visualization workflows;
+            the current saving path does not apply it.
+        plot_image: Compatibility argument retained by the CLI; no plotting is
+            performed in the current implementation.
+
+    Saves:
+        MATLAB ``.mat`` files with key ``zfsosimage``. The saved array is
+        usually ``[nx, ny, nz, nt]`` and may be squeezed to lower dimensions for
+        single-frame or single-slice inputs.
+    """
     # 1. predict
     for ff in tqdm(f, desc='files'):
         print('-- processing --', ff)
         # If ff is '/path/to/your/cine.mat', then save_path will be '/path/to/your/'
+        # Mirror the input tree while replacing Mask folders/files with ZFSOS outputs.
         save_path = ff.replace('Mask', 'ZFSOS').replace(input_dir, output_dir)
         if os.path.isfile(save_path):  # check if the .mat file already exists
             continue
         elif not os.path.isdir(os.path.dirname(save_path)):
+            # Create the mirrored destination directory before writing the .mat file.
             os.makedirs(os.path.dirname(save_path))
 
         recimage = np.squeeze(get_zfdata(ff, task))  # recimage after squeeze: [nx,ny,nz,nt] or [nx,ny,nz] or [nx,ny]
         print(f"{recimage.shape}")
 
         if center_crop:
+            # Optional readout oversampling removal keeps the existing evaluation flag.
             recimage = image_halfcropnx(recimage)  # recimage after crop: [nx/2,ny,nz,nt] or [nx/2,ny,nz] or [nx/2,ny]
 
         sosimage_savemat = recimage
+        # Evaluation scripts expect the zero-filled SOS result under this key.
         sio.savemat(save_path, {'zfsosimage': sosimage_savemat})
         print('-- saving --', save_path)
 
 
 if __name__ == '__main__':
+    """CLI entrypoint for preparing zero-filled SOS reconstructions.
+
+    The script scans CMRxReconAll mask files under ``--input`` unless
+    ``--exact_mask_filename`` is provided. Matching files are filtered by
+    modality, task, evaluation set, and undersampling pattern, reconstructed by
+    applying each mask to the corresponding ``FullSample`` k-space, and saved
+    under a mirrored ``ZFSOS`` tree rooted at ``--output``.
+    """
     argv = sys.argv
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', type=str, nargs='?', default='/input', help='input directory')
@@ -115,6 +189,7 @@ if __name__ == '__main__':
     print("Output data store in:", output_dir)
 
     if exact_mask_filename is not None:
+        # A single explicit mask file bypasses the modality glob search.
         f = [exact_mask_filename]
         print('##############')
         print("Exact recon filename:", exact_mask_filename)
@@ -124,6 +199,7 @@ if __name__ == '__main__':
     elif exact_mask_filename is None:
         # get input file list
         # TODO: Need to be changed according to the TestSet !!!
+        # Modality-specific glob patterns match the naming conventions in each folder.
         modalities = {
             'Cine': 'cine*.mat',
             'Mapping': '*map*.mat',
@@ -141,6 +217,7 @@ if __name__ == '__main__':
 
         for modal, pattern in modalities.items():
             if modality == modal or modality == 'All':
+                # Keep only mask files matching the selected modality/task/set/pattern.
                 file_dict[modal] = sorted([
                     file for file in glob.glob(join(input_dir, f'**/{pattern}'), recursive=True)
                     if all(x in file for x in ['Mask', modal, task, evaluate_set, undersample])

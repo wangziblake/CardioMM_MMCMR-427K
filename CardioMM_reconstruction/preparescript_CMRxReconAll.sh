@@ -27,7 +27,7 @@ python maincode/prepare_cmr/prepare_groundtruthsos_cmrxreconall.py \
 --modality All
 
 
-## Zero-filled SOS reconstruction in advance for fast evaluaion (A6000-fdu-gpu-node1)
+## Zero-filled SOS reconstruction in advance for fast evaluaion
 python maincode/prepare_cmr/prepare_zerofilledsos_cmrxreconall.py \
 --input /mnt/nas/nas3/openData/MMCMR_427K/AllData/MultiCoil \
 --output /mnt/nas/nas3/openData/MMCMR_427K/AllData/MultiCoil \

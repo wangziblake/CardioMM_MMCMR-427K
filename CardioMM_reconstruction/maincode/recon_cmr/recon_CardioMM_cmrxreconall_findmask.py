@@ -16,6 +16,7 @@ Some codes are modified based on https://arxiv.org/abs/2309.13839
 import os
 import sys
 import pathlib
+# Make repository-local modules importable when launching from the nested recon_cmr folder.
 sys.path.insert(0, os.path.dirname(os.path.dirname(pathlib.Path(__file__).parent.absolute())))
 
 import argparse
@@ -34,14 +35,27 @@ from text.text_models import LanguageModel, LMHead, LMHead2
 from utils import load_kdata_compatible, load_maskdata
 from utils import count_parameters
 from datamapping import get_metadata_attribute_from_filename
+# Global text encoder used to create CLIP text features for metadata and undersampling prompts.
 language_model = LanguageModel(llm_model_name="../clip-vit-base-patch16")
 
 
 def get_frames_indices_stage(dataslice, num_slices_in_volume, num_t_in_volume=None):
-    '''
-    when we reshape t, z to one axis in preprocessing, we need to get the indices of the slices in the original t, z axis;
-    then find the adjacent slices in the original z axis
-    '''
+    """
+    Map a flattened frame index back to original time/slice coordinates.
+
+    During reconstruction, time ``t`` and slice ``z`` are flattened into one
+    leading axis. This helper recovers the original coordinates and returns the
+    flattened indices to read. The current implementation returns only the
+    current/central slice.
+
+    Args:
+        dataslice: Flattened ``t,z`` index.
+        num_slices_in_volume: Number of z-slices per time point.
+        num_t_in_volume: Number of time points in the volume.
+
+    Returns:
+        List of flattened indices to load from k-space and mask arrays.
+    """
     ti = dataslice//num_slices_in_volume
     zi = dataslice - ti*num_slices_in_volume
 
@@ -58,6 +72,19 @@ def get_frames_indices_stage(dataslice, num_slices_in_volume, num_t_in_volume=No
 
 
 def replace_mask_to_find_data(mask_filename):
+    """
+    Convert a mask filename into its matching full-sample data filename.
+
+    Args:
+        mask_filename: Path containing ``"_mask_"`` before the undersampling
+            pattern suffix.
+
+    Returns:
+        Data filename with the ``"_mask_..."`` suffix removed.
+
+    Raises:
+        NotImplementedError: If the filename does not contain ``"_mask_"``.
+    """
     if "_mask_" in mask_filename:
         base, ext = mask_filename.rsplit(".", 1)
         base = base.rsplit("_mask_", 1)[0]
@@ -68,29 +95,51 @@ def replace_mask_to_find_data(mask_filename):
 
 
 class stage_dataset(torch.utils.data.Dataset):
+    """
+    Dataset for reconstructing one masked CMRxRecon file.
+
+    The dataset starts from a mask ``.mat`` filename, finds the corresponding
+    full-sample k-space file, normalizes k-space and mask layouts to flattened
+    ``[nt * nz, ...]`` arrays, builds metadata/undersampling text embeddings,
+    and returns tensors ready for ``CardioMM_SEM`` inference.
+    """
+
     def __init__(self, fname, task):
+        """
+        Args:
+            fname: Mask ``.mat`` filename used as the reconstruction driver.
+            task: Task folder name used when mapping ``Mask_<task>`` to
+                ``FullSample``.
+        """
         self.fname = fname
         self.task = task
         # here, input kspace from .mat: 5D-[nt, nz, nc, ny, nx] or 4D-[nz, nc, ny, nx] or 3D-[nc, ny, nx]
+        # Derive the matching fully sampled k-space filename from the mask filename.
         data_fname = replace_mask_to_find_data(fname).replace(f'Mask_{self.task}', 'FullSample')
         self.kspace = load_kdata_compatible(data_fname)
         if len(self.kspace.shape) != 5:
+            # Expand 4D k-space to [1, nz, nc, ny, nx].
             self.kspace = np.expand_dims(self.kspace, axis=0)  # make sure its shape is [1, nz, nc, ny, nx]
             if len(self.kspace.shape) != 5:
+                # Expand 3D k-space to [1, 1, nc, ny, nx].
                 self.kspace = np.expand_dims(self.kspace, axis=0)  # make sure its shape is [1, nz, nc, ny, nx]
         self.num_t = self.kspace.shape[0]
         self.num_slices = self.kspace.shape[1]
+        # Flatten time/slice and transpose spatial axes from [ny, nx] to model [nx, ny].
         self.kspace = self.kspace.reshape(-1, self.kspace.shape[2], self.kspace.shape[3], self.kspace.shape[4]).transpose(0, 1, 3, 2)  # --> [nt*nz, nc, nx, ny]
 
         # here, input mask from .mat: 3D-[nt, ny, nx] or 2D-[ny, nx]
         self.mask = load_maskdata(fname)
         if len(self.mask.shape) == 3:
+            # kt masks vary over time and are expanded to [nt, 1, 1, ny, nx].
             self.mask = np.expand_dims(np.expand_dims(self.mask, axis=1),axis=2)  # make sure its shape is [nt, 1, 1, ny, nx]
         elif len(self.mask.shape) == 2:
+            # 2D masks are reused across all time points.
             self.mask = np.expand_dims(np.expand_dims(np.expand_dims(self.mask, axis=0), axis=1), axis=2)  # make sure its shape is [1, 1, 1, ny, nx]
             self.mask = np.tile(self.mask, reps=(self.num_t, 1, 1, 1, 1))  # make sure its shape is [nt, 1, 1, ny, nx]
         else:
             raise NotImplementedError("The mask shape should be 2D(k) or 3D(k-t).")
+        # Tile masks across slices, flatten [nt, nz], then transpose to model [nx, ny].
         self.mask = np.tile(self.mask, reps=(1, self.num_slices, 1, 1, 1))  # make sure its shape is [nt, nz, 1, ny, nx]
         self.mask = self.mask.reshape(-1, self.mask.shape[2], self.mask.shape[3], self.mask.shape[4]).transpose(0, 1, 3, 2)  # --> [nt*nz, 1, nx, ny]
 
@@ -99,10 +148,21 @@ class stage_dataset(torch.utils.data.Dataset):
         self.attrs = get_metadata_attribute_from_filename(fname)  # TODO: get metadata, check sometimes
 
     def __getitem__(self, dataslice):
+        """
+        Load one flattened frame and build model inputs.
+
+        Args:
+            dataslice: Flattened time/slice index.
+
+        Returns:
+            Tuple ``(masked_kspace, mask, dataslice, metadata_embedding,
+            usdata_embedding, mask_type)``.
+        """
         slice_idx_list = get_frames_indices_stage(dataslice, self.num_slices, self.num_t)
         _input = []
         for slc_i in slice_idx_list:
             _input.append(self.kspace[slc_i])
+        # Concatenate selected slice(s) along the coil/channel axis.
         _input = np.concatenate(_input, axis=0) #.transpose(0,2,1)
         kspace_torch = T.to_tensor(_input)  # [nt*nz, nc, nx, ny, 2]
         masked_kspace = kspace_torch.to(torch.float32)
@@ -129,10 +189,12 @@ class stage_dataset(torch.utils.data.Dataset):
         metadata_modality, metadata_view = self.attrs['modality'], self.attrs['view']
         metadata_field, metadata_vendor, metadata_scanner = self.attrs['field'], self.attrs['vendor'], self.attrs['scanner']
         # metadata_medcon = self.attrs['medcon']  # [healthy, HCM, ..., or unknown]
+        # Current inference metadata excludes disease/medical condition by design.
         ori_metadata = f"{metadata_lifespan} {metadata_task}." \
                        f"Vendor: {metadata_field}, {metadata_vendor}, {metadata_scanner}. " \
                        f"Modality: {metadata_modality}, {metadata_view}. " \
                        # f"Disease: {metadata_medcon}."
+        # Normalize whitespace before text encoding to keep prompts compact and stable.
         metadata_tuple = re.sub(r'\s+', ' ', ori_metadata.strip()).replace("\n", "")
         # print(metadata_tuple)  # Text debug
         metadata_list = [metadata_tuple]  # tuple -> list as input
@@ -143,6 +205,7 @@ class stage_dataset(torch.utils.data.Dataset):
         metadata_af = self.attrs['acceleration'] + "x"
         metadata_us = self.attrs['mask_type']
         ori_usdata = f"Undersampling: {metadata_af} {metadata_us}."
+        # Normalize whitespace before text encoding to keep prompts compact and stable.
         usdata_tuple = re.sub(r'\s+', ' ', ori_usdata.strip()).replace("\n", "")
         # print(usdata_tuple)  # Text debug
         usdata_list = [usdata_tuple]  # tuple -> list as input
@@ -151,10 +214,26 @@ class stage_dataset(torch.utils.data.Dataset):
         return masked_kspace * mask_torch, mask_torch, dataslice, lm_embd_init, lm_embd_init2, metadata_us
 
     def __len__(self):
+        """Return the number of flattened time/slice frames in this file."""
         return self.num_files
 
 
 def predict(f, num_low_frequencies, num_cascades=12, model_path = '', bs1 = 1, center_crop=False, num_works = 2, input_dir='', output_dir='', task='TaskAll'):
+    """
+    Run CardioMM reconstruction for a list of mask files and save ``.mat`` outputs.
+
+    Args:
+        f: List of mask filenames to reconstruct.
+        num_low_frequencies: ACS size passed to the model during inference.
+        num_cascades: Number of unrolled CardioMM cascades to instantiate.
+        model_path: Checkpoint path containing model and language-head weights.
+        bs1: DataLoader batch size.
+        center_crop: Unused compatibility flag retained in the signature.
+        num_works: Number of DataLoader worker processes.
+        input_dir: Input root used when deriving output paths.
+        output_dir: Output root where ``ReconResult`` files are saved.
+        task: Task name used in mask/data/output path replacement.
+    """
     # 0. config
     device = 'cuda:0'
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -183,7 +262,9 @@ def predict(f, num_low_frequencies, num_cascades=12, model_path = '', bs1 = 1, c
     )
 
     state_dict = torch.load(model_path)['state_dict']
+    # The training checkpoint includes SSIM loss state, which is not loaded for inference.
     state_dict.pop('loss.w')
+    # Extract the reconstruction network weights saved under the Lightning module prefix.
     state_dict1 = {k: v for k, v in state_dict.items() if k.startswith('metausunetlight.')}
     state_dict1 = {k.replace('metausunetlight.', ''): v for k, v in state_dict1.items()}
     model1.load_state_dict(state_dict1)
@@ -191,6 +272,7 @@ def predict(f, num_low_frequencies, num_cascades=12, model_path = '', bs1 = 1, c
     model1.to(device)
 
     lm_head_meta = LMHead(llm_model_dim=512, llm_embd_dim=256, llm_nclasses=3)
+    # Extract metadata projection-head weights from the Lightning checkpoint.
     state_dict2 = {k: v for k, v in state_dict.items() if k.startswith('lm_head_meta.')}
     state_dict2 = {k.replace('lm_head_meta.', ''): v for k, v in state_dict2.items()}
     lm_head_meta.load_state_dict(state_dict2)
@@ -198,6 +280,7 @@ def predict(f, num_low_frequencies, num_cascades=12, model_path = '', bs1 = 1, c
     lm_head_meta.to(device)
 
     lm_head_us = LMHead2(llm_model_dim=512, llm_embd_dim=256, llm_nclasses=3)
+    # Extract undersampling projection-head weights from the Lightning checkpoint.
     state_dict3 = {k: v for k, v in state_dict.items() if k.startswith('lm_head_us.')}
     state_dict3 = {k.replace('lm_head_us.', ''): v for k, v in state_dict3.items()}
     lm_head_us.load_state_dict(state_dict3)
@@ -211,10 +294,12 @@ def predict(f, num_low_frequencies, num_cascades=12, model_path = '', bs1 = 1, c
     with torch.no_grad():
         for ff in tqdm(f, desc='files'):
             print('-- processing --', ff)
+            # Save reconstructions by replacing mask task folders with result task folders.
             save_path = ff.replace(f'Mask_{task}', f'{task}').replace(input_dir, join(output_dir, 'ReconResult'))
             if os.path.isfile(save_path):  # check if the .mat file already exists
                 continue
             elif not os.path.isdir(os.path.dirname(save_path)):
+                # Create the nested output directory that mirrors the input structure.
                 os.makedirs(os.path.dirname(save_path))
 
             dataset = stage_dataset(ff, task)
@@ -227,15 +312,18 @@ def predict(f, num_low_frequencies, num_cascades=12, model_path = '', bs1 = 1, c
                 # num_low_frequencies = 20  # TODO: need to check under different undersampling scenarios, cannot be 0
                 lm_embd_init = metadata
                 lm_embd_init2 = usdata
+                # Project CLIP text features into the reconstruction conditioning dimension.
                 lm_embd_adapt, _ = lm_head_meta(lm_embd_init.to(device))  # meta text embadding after projection in MRI reconstruction tasks
                 lm_embd_adapt2, _ = lm_head_us(lm_embd_init2.to(device))  # us text embadding after projection in MRI reconstruction tasks
                 output = model1(masked_kspace.to(device), mask.to(device), num_low_frequencies, lm_embd_adapt.to(device), lm_embd_adapt2.to(device), mask_type)
                 for i in range(bs):
                     pred_stage.append((dataslice[i], output[i:i+1]))
+            # Restore flattened frame order before reshaping back to [nt, nz, nx, ny].
             pred_stage = torch.cat([out for _, out in sorted(pred_stage)], dim=0).cpu()
 
             pred_stage_final = pred_stage.cpu().numpy().transpose(0, 2, 1).reshape(dataset.num_t, dataset.num_slices, pred_stage.shape[2], pred_stage.shape[1])
 
+            # MATLAB submission layout is [nx, ny, nz, nt].
             save_mat = pred_stage_final.transpose(3, 2, 1, 0)  # nx, ny, nz, nt
             sio.savemat(save_path, {'reconimage': save_mat})
             print('-- saving --', save_path)
@@ -279,6 +367,7 @@ if __name__ == '__main__':
     print("Output data store in:", output_dir)
 
     if exact_mask_filename is not None:
+        # Exact filename mode bypasses modality/task glob discovery.
         f = [exact_mask_filename]
         print('##############')
         print("Exact recon mask filename:", exact_mask_filename)
@@ -305,6 +394,7 @@ if __name__ == '__main__':
 
         for modal, pattern in modalities.items():
             if modality == modal or modality == 'All':
+                # Keep only mask files matching modality, task, evaluation split, and undersampling pattern.
                 file_dict[modal] = sorted([
                     file for file in glob.glob(join(input_dir, f'**/{pattern}'), recursive=True)
                     if all(x in file for x in ['Mask', modal, task, evaluate_set, undersample])

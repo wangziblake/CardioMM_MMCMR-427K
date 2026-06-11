@@ -17,18 +17,26 @@ from fastmri.data.subsample import MagicMaskFunc, MagicMaskFractionFunc
 
 @contextlib.contextmanager
 def temp_seed(rng: np.random.RandomState, seed: Optional[Union[int, Tuple[int, ...]]]):
-    """A context manager for temporarily adjusting the random seed."""
+    """
+    Temporarily set a NumPy RandomState seed and restore its previous state.
+
+    Args:
+        rng: RandomState instance used by a mask function.
+        seed: Temporary seed. If ``None``, the RNG state is left unchanged.
+    """
     if seed is None:
         try:
             yield
         finally:
             pass
     else:
+        # Preserve the caller's RNG stream so deterministic calls do not affect later sampling.
         state = rng.get_state()
         rng.seed(seed)
         try:
             yield
         finally:
+            # Restore the exact state that existed before entering the context.
             rng.set_state(state)
 
 
@@ -45,6 +53,9 @@ class MaskFunc:
     handled by ``sample_mask``, which calls ``calculate_center_mask`` for (1)
     and ``calculate_acceleration_mask`` for (2). The combination is executed
     in the ``MaskFunc`` ``__call__`` function.
+
+    ``__call__`` returns the combined mask, the number of low-frequency samples,
+    the selected acceleration, and a downstream ``mask_type`` string.
 
     If you would like to implement a new mask, simply subclass ``MaskFunc``
     and overwrite the ``sample_mask`` logic. See examples in ``RandomMaskFunc``
@@ -98,8 +109,8 @@ class MaskFunc:
             seed: Seed for random number generator for reproducibility.
 
         Returns:
-            A 2-tuple containing 1) the k-space mask and 2) the number of
-            center frequency lines.
+            Tuple ``(mask, num_low_frequencies, acceleration, mask_type)``.
+            ``mask`` is broadcastable to the requested k-space ``shape``.
         """
         if len(shape) < 3:
             raise ValueError("Shape should have 3 or more dimensions")
@@ -107,7 +118,7 @@ class MaskFunc:
         with temp_seed(self.rng, seed):
             center_mask, accel_mask, num_low_frequencies, acceleration, mask_type = self.sample_mask(shape, offset)
 
-        # combine masks together
+        # Combine densely sampled center and accelerated outer k-space masks.
         return torch.max(center_mask, accel_mask), num_low_frequencies, acceleration, mask_type
 
     def sample_mask(
@@ -128,10 +139,10 @@ class MaskFunc:
             offset: Offset from 0 to begin mask (for equispaced masks).
 
         Returns:
-            A 3-tuple contaiing 1) the mask for the center of k-space, 2) the
-            mask for the high frequencies of k-space, and 3) the integer count
-            of low frequency samples.
+            Tuple containing center mask, acceleration mask, low-frequency
+            count, acceleration, and mask type.
         """
+        # k-space columns live at shape[-2]; rows live at shape[-3] for 2D masks.
         num_cols = shape[-2]
         num_rows = shape[-3]
         center_fraction, acceleration = self.choose_acceleration()
@@ -149,7 +160,16 @@ class MaskFunc:
         return center_mask, acceleration_mask, num_low_frequencies, acceleration, mask_type
 
     def reshape_mask(self, mask: np.ndarray, shape: Sequence[int]) -> torch.Tensor:
-        """Reshape mask to desired output shape."""
+        """
+        Reshape a 1D column mask to be broadcastable to k-space data.
+
+        Args:
+            mask: 1D NumPy mask over k-space columns.
+            shape: Target k-space shape.
+
+        Returns:
+            Float tensor mask with singleton dimensions except for columns.
+        """
         num_cols = shape[-2]
         mask_shape = [1 for _ in shape]
         mask_shape[-2] = num_cols
@@ -193,6 +213,7 @@ class MaskFunc:
         """
         num_cols = shape[-2]
         mask = np.zeros(num_cols, dtype=np.float32)
+        # Center the ACS band in the phase-encoding/column dimension.
         pad = (num_cols - num_low_freqs + 1) // 2
         mask[pad: pad + num_low_freqs] = 1
         assert mask.sum() == num_low_freqs
@@ -200,8 +221,14 @@ class MaskFunc:
         return mask
 
     def choose_acceleration(self):
-        """Choose acceleration based on class parameters."""
+        """
+        Choose a center setting and acceleration from configured options.
+
+        Returns:
+            Pair ``(center_fraction_or_num_low_frequencies, acceleration)``.
+        """
         if self.allow_any_combination:
+            # Fixed-ACS CMRxRecon masks use this path to combine low-frequency counts with accelerations.
             return self.rng.choice(self.center_fractions), self.rng.choice(
                 self.accelerations
             )
@@ -241,6 +268,12 @@ class RandomMaskFunc(MaskFunc):
         offset: Optional[int],
         num_low_frequencies: int,
     ) -> np.ndarray:
+        """
+        Randomly sample outer k-space columns with an acceleration-matched probability.
+
+        The probability accounts for the already-sampled low-frequency center so
+        the expected total number of sampled columns is ``num_cols / acceleration``.
+        """
         prob = (num_cols / acceleration - num_low_frequencies) / (
             num_cols - num_low_frequencies
         )
@@ -357,10 +390,22 @@ class FixedLowEquiSpacedMaskFunc(MaskFunc):
     """
 
     def sample_mask(self, shape, offset):
+        """
+        Build a fixed-ACS equispaced mask and label it as ``"uniform"``.
+
+        Args:
+            shape: Target k-space shape.
+            offset: Offset argument retained for compatibility; this fixed path
+                passes offset 0 to the acceleration mask.
+
+        Returns:
+            Tuple of center mask, acceleration mask, low-frequency count,
+            acceleration, and ``"uniform"`` mask type.
+        """
 
         num_cols = shape[-2]
         num_rows = shape[-3]
-        # changes below
+        # Fixed-ACS classes interpret the first returned value as num_low_frequencies.
         num_low_frequencies, acceleration = self.choose_acceleration()
         center_mask = self.reshape_mask(
             self.calculate_center_mask(shape, num_low_frequencies), shape
@@ -422,10 +467,21 @@ class FixedLowRandomMaskFunc(MaskFunc):
     """
 
     def sample_mask(self, shape, offset):
+        """
+        Build a fixed-ACS random mask and label it as ``"random"``.
+
+        Args:
+            shape: Target k-space shape.
+            offset: Offset argument retained for API compatibility.
+
+        Returns:
+            Tuple of center mask, acceleration mask, low-frequency count,
+            acceleration, and ``"random"`` mask type.
+        """
 
         num_cols = shape[-2]
         num_rows = shape[-3]
-        # changes below
+        # Fixed-ACS classes interpret the first returned value as num_low_frequencies.
         num_low_frequencies, acceleration = self.choose_acceleration()
         center_mask = self.reshape_mask(
             self.calculate_center_mask(shape, num_low_frequencies), shape
@@ -448,6 +504,7 @@ class FixedLowRandomMaskFunc(MaskFunc):
         offset: Optional[int],
         num_low_frequencies: int,
     ) -> np.ndarray:
+        """Randomly sample columns with probability ``1 / acceleration``."""
         prob = (num_cols / acceleration) / (
             num_cols
         )
@@ -472,10 +529,21 @@ class FixedLowRandomMaskFunc_EqualAF(MaskFunc):  # Not used in CMRxRecon
     """
 
     def sample_mask(self, shape, offset):
+        """
+        Build a fixed-ACS random mask whose expected acceleration includes ACS lines.
+
+        Args:
+            shape: Target k-space shape.
+            offset: Offset argument retained for API compatibility.
+
+        Returns:
+            Tuple of center mask, acceleration mask, low-frequency count,
+            acceleration, and ``"random"`` mask type.
+        """
 
         num_cols = shape[-2]
         num_rows = shape[-3]
-        # changes below
+        # Fixed-ACS classes interpret the first returned value as num_low_frequencies.
         num_low_frequencies, acceleration = self.choose_acceleration()
         center_mask = self.reshape_mask(
             self.calculate_center_mask(shape, num_low_frequencies), shape
@@ -498,6 +566,9 @@ class FixedLowRandomMaskFunc_EqualAF(MaskFunc):  # Not used in CMRxRecon
         offset: Optional[int],
         num_low_frequencies: int,
     ) -> np.ndarray:
+        """
+        Randomly sample non-ACS columns so expected total samples match acceleration.
+        """
         prob = (num_cols / acceleration - num_low_frequencies) / (
             num_cols - num_low_frequencies
         )
@@ -513,10 +584,21 @@ class FixedLowRadialMaskFunc(MaskFunc):
     """
 
     def sample_mask(self, shape, offset):
+        """
+        Build a fixed-ACS pseudo-radial 2D mask and label it as ``"radial"``.
+
+        Args:
+            shape: Target k-space shape.
+            offset: Offset argument retained for API compatibility.
+
+        Returns:
+            Tuple of 2D center mask, radial acceleration mask, low-frequency
+            count, acceleration, and ``"radial"`` mask type.
+        """
 
         num_cols = shape[-2]
         num_rows = shape[-3]
-        # changes below
+        # Fixed-ACS classes interpret the first returned value as num_low_frequencies.
         num_low_frequencies, acceleration = self.choose_acceleration()
         center_mask = self.reshape_mask(
             self.calculate_2Dcenter_mask(shape, num_low_frequencies), shape
@@ -532,7 +614,16 @@ class FixedLowRadialMaskFunc(MaskFunc):
         return center_mask, acceleration_mask, num_low_frequencies, acceleration, mask_type
 
     def reshape_mask(self, mask: np.ndarray, shape: Sequence[int]) -> torch.Tensor:
-        """Reshape mask to desired output shape."""
+        """
+        Reshape a 2D row/column mask to be broadcastable to k-space data.
+
+        Args:
+            mask: 2D NumPy mask over k-space rows and columns.
+            shape: Target k-space shape.
+
+        Returns:
+            Float tensor mask with singleton dimensions except rows and columns.
+        """
         num_cols = shape[-2]
         num_rows = shape[-3]
         mask_shape = [1 for _ in shape]
@@ -573,12 +664,20 @@ class FixedLowRadialMaskFunc(MaskFunc):
         offset: Optional[int],
         num_low_frequencies: int,
     ) -> np.ndarray:
+        """
+        Generate a pseudo-radial outer k-space mask.
+
+        The implementation rotates a central line through multiple angles, crops
+        it to the requested k-space size, and binarizes the accumulated image.
+        """
 
         from scipy.ndimage import rotate
 
+        # Empirical scaling used by the existing radial sampling implementation.
         R = acceleration * 0.6
         rate = 1 / R
         cropcorner = True  # True or False
+        # Offset successive angle sets by a golden-angle-like increment.
         angle4next = 137.5
         beams = int(np.floor(rate * 180))  # beams is the number of angles
 
@@ -592,6 +691,7 @@ class FixedLowRadialMaskFunc(MaskFunc):
         angle = 180 / beams
 
         import random
+        # Randomize the angular offset while keeping the same beam spacing.
         i = random.randint(1, 30)
         angles = np.arange(0 + angle4next * (i - 1), 180 + angle4next * (i - 1), angle)
         image = np.zeros((num_rows, num_cols), dtype=np.float32)
@@ -604,7 +704,17 @@ class FixedLowRadialMaskFunc(MaskFunc):
         return mask
 
     def crop(self, image, nx, ny):
-        """ Crop the image to the desired size (nx, ny) """
+        """
+        Center-crop a 2D mask image to ``(nx, ny)``.
+
+        Args:
+            image: 2D image/mask to crop.
+            nx: Target number of rows.
+            ny: Target number of columns.
+
+        Returns:
+            Center-cropped 2D array.
+        """
         start_x = (image.shape[0] - nx) // 2
         start_y = (image.shape[1] - ny) // 2
         return image[start_x:start_x + nx, start_y:start_y + ny]
@@ -617,16 +727,31 @@ class FixedLowEquiSpaced_RandomMaskFunc(MaskFunc):
     The lines are spaced exactly evenly, as is done in standard GRAPPA-style
     acquisitions. This means that with a densely-sampled center,
     ``acceleration`` will be greater than the true acceleration rate.
+
+    Each call randomly selects either the uniform/equispaced branch or the
+    random branch and returns the corresponding downstream ``mask_type``.
     """
 
     def sample_mask(self, shape, offset):
+        """
+        Randomly build either a fixed-ACS uniform or fixed-ACS random mask.
+
+        Args:
+            shape: Target k-space shape.
+            offset: Offset argument retained for API compatibility.
+
+        Returns:
+            Tuple of center mask, acceleration mask, low-frequency count,
+            acceleration, and branch mask type.
+        """
 
         num_cols = shape[-2]
         num_rows = shape[-3]
-        # changes below
+        # Fixed-ACS classes interpret the first returned value as num_low_frequencies.
         num_low_frequencies, acceleration = self.choose_acceleration()
 
         import random
+        # Python random selects which family is used for this sample.
         pattern = random.choice(['uniform', 'random'])
 
         if pattern == 'uniform':
@@ -694,6 +819,7 @@ class FixedLowEquiSpaced_RandomMaskFunc(MaskFunc):
         offset: Optional[int],
         num_low_frequencies: int,
     ) -> np.ndarray:
+        """Randomly sample columns with probability ``1 / acceleration``."""
         prob = (num_cols / acceleration) / (
             num_cols
         )
@@ -708,16 +834,31 @@ class FixedLowEquiSpaced_Random_RadialMaskFunc(MaskFunc):
     The lines are spaced exactly evenly, as is done in standard GRAPPA-style
     acquisitions. This means that with a densely-sampled center,
     ``acceleration`` will be greater than the true acceleration rate.
+
+    Each call randomly selects uniform, random, or pseudo-radial sampling and
+    returns the corresponding downstream ``mask_type``.
     """
 
     def sample_mask(self, shape, offset):
+        """
+        Randomly build a fixed-ACS uniform, random, or radial mask.
+
+        Args:
+            shape: Target k-space shape.
+            offset: Offset argument retained for API compatibility.
+
+        Returns:
+            Tuple of center mask, acceleration mask, low-frequency count,
+            acceleration, and branch mask type.
+        """
 
         num_cols = shape[-2]
         num_rows = shape[-3]
-        # changes below
+        # Fixed-ACS classes interpret the first returned value as num_low_frequencies.
         num_low_frequencies, acceleration = self.choose_acceleration()
 
         import random
+        # Python random selects which sampling family is used for this sample.
         pattern = random.choice(['uniform', 'random', 'radial'])
 
         if pattern == 'uniform':
@@ -798,6 +939,7 @@ class FixedLowEquiSpaced_Random_RadialMaskFunc(MaskFunc):
             offset: Optional[int],
             num_low_frequencies: int,
     ) -> np.ndarray:
+        """Randomly sample columns with probability ``1 / acceleration``."""
         prob = (num_cols / acceleration) / (
                 num_cols
         )
@@ -805,7 +947,16 @@ class FixedLowEquiSpaced_Random_RadialMaskFunc(MaskFunc):
         return self.rng.uniform(size=num_cols) < prob
 
     def reshape_mask_radial(self, mask: np.ndarray, shape: Sequence[int]) -> torch.Tensor:
-        """Reshape mask to desired output shape."""
+        """
+        Reshape a 2D radial mask to be broadcastable to k-space data.
+
+        Args:
+            mask: 2D NumPy mask over k-space rows and columns.
+            shape: Target k-space shape.
+
+        Returns:
+            Float tensor mask with singleton dimensions except rows and columns.
+        """
         num_cols = shape[-2]
         num_rows = shape[-3]
         mask_shape = [1 for _ in shape]
@@ -846,12 +997,20 @@ class FixedLowEquiSpaced_Random_RadialMaskFunc(MaskFunc):
         offset: Optional[int],
         num_low_frequencies: int,
     ) -> np.ndarray:
+        """
+        Generate a pseudo-radial outer k-space mask for the mixed-pattern class.
+
+        The implementation rotates a central line through multiple angles, crops
+        it to the requested k-space size, and binarizes the accumulated image.
+        """
 
         from scipy.ndimage import rotate
 
+        # Empirical scaling used by the existing radial sampling implementation.
         R = acceleration * 0.6
         rate = 1 / R
         cropcorner = True  # True or False
+        # Offset successive angle sets by a golden-angle-like increment.
         angle4next = 137.5
         beams = int(np.floor(rate * 180))  # beams is the number of angles
 
@@ -865,6 +1024,7 @@ class FixedLowEquiSpaced_Random_RadialMaskFunc(MaskFunc):
         angle = 180 / beams
 
         import random
+        # Randomize the angular offset while keeping the same beam spacing.
         i = random.randint(1, 30)
         angles = np.arange(0 + angle4next * (i - 1), 180 + angle4next * (i - 1), angle)
         image = np.zeros((num_rows, num_cols), dtype=np.float32)
@@ -877,7 +1037,17 @@ class FixedLowEquiSpaced_Random_RadialMaskFunc(MaskFunc):
         return mask
 
     def crop(self, image, nx, ny):
-        """ Crop the image to the desired size (nx, ny) """
+        """
+        Center-crop a 2D mask image to ``(nx, ny)``.
+
+        Args:
+            image: 2D image/mask to crop.
+            nx: Target number of rows.
+            ny: Target number of columns.
+
+        Returns:
+            Center-cropped 2D array.
+        """
         start_x = (image.shape[0] - nx) // 2
         start_y = (image.shape[1] - ny) // 2
         return image[start_x:start_x + nx, start_y:start_y + ny]
@@ -893,10 +1063,16 @@ def create_mask_for_mask_type(
     Creates a mask of the specified type.
 
     Args:
-        mask_type_str
+        mask_type_str: Mask family name. Supported values include ``"random"``,
+            ``"equispaced"``, ``"equispaced_fraction"``, ``"magic"``,
+            ``"magic_fraction"``, ``"equispaced_fixed"``, ``"random_fixed"``,
+            ``"radial_fixed"``, ``"random_equispaced_fixed"``, and
+            ``"random_equispaced_radial_fixed"``.
         center_fractions: What fraction of the center of k-space to include.
         accelerations: What accelerations to apply.
-        num_low_frequencies
+        num_low_frequencies: Fixed ACS counts used by CMRxRecon fixed-ACS mask
+            classes. These are passed as the base class ``center_fractions``
+            argument by the existing implementation.
 
     Returns:
         A mask func for the target mask type.
@@ -912,14 +1088,19 @@ def create_mask_for_mask_type(
     elif mask_type_str == "magic_fraction":
         return MagicMaskFractionFunc(center_fractions, accelerations)
     elif mask_type_str == "equispaced_fixed":  # CMRxRecon dataset
+        # Fixed-ACS classes use num_low_frequencies as their first configured option list.
         return FixedLowEquiSpacedMaskFunc(num_low_frequencies, accelerations, allow_any_combination=True)
     elif mask_type_str == "random_fixed":  # CMRxRecon2024 dataset
+        # Fixed-ACS classes use num_low_frequencies as their first configured option list.
         return FixedLowRandomMaskFunc(num_low_frequencies, accelerations, allow_any_combination=True)
     elif mask_type_str == "radial_fixed":  # CMRxRecon2024 dataset
+        # Fixed-ACS classes use num_low_frequencies as their first configured option list.
         return FixedLowRadialMaskFunc(num_low_frequencies, accelerations, allow_any_combination=True)
     elif mask_type_str == "random_equispaced_fixed":  # CMRxRecon2024 dataset
+        # Fixed-ACS classes use num_low_frequencies as their first configured option list.
         return FixedLowEquiSpaced_RandomMaskFunc(num_low_frequencies, accelerations, allow_any_combination=True)
     elif mask_type_str == "random_equispaced_radial_fixed":  # CMRxRecon2024 dataset
+        # Fixed-ACS classes use num_low_frequencies as their first configured option list.
         return FixedLowEquiSpaced_Random_RadialMaskFunc(num_low_frequencies, accelerations, allow_any_combination=True)
     else:
         raise ValueError(f"{mask_type_str} not supported")

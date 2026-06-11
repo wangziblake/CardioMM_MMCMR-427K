@@ -21,19 +21,29 @@ from data.mri_data import CombinedCmrxReconSliceDataset, CmrxReconSliceDataset
 
 
 def worker_init_fn(worker_id):
-    """Handle random seeding for all mask_func."""
+    """
+    Seed each DataLoader worker's mask function RNG.
+
+    PyTorch creates a different base seed for each worker. This helper forwards
+    that seed to the dataset transform's ``mask_func`` RNG, with extra offsets
+    for combined datasets and distributed training so workers/ranks do not share
+    identical undersampling masks.
+
+    Args:
+        worker_id: Integer worker id provided by ``torch.utils.data.DataLoader``.
+    """
     worker_info = torch.utils.data.get_worker_info()
     data: Union[
         CmrxReconSliceDataset, CombinedCmrxReconSliceDataset
     ] = worker_info.dataset  # pylint: disable=no-member
 
-    # Check if we are using DDP
+    # Check if we are using DDP so each rank can receive a unique seed stream.
     is_ddp = False
     if torch.distributed.is_available():
         if torch.distributed.is_initialized():
             is_ddp = True
 
-    # for NumPy random seed we need it to be in this range
+    # For NumPy-compatible RNG seeding, final seeds must be within uint32 range.
     base_seed = worker_info.seed  # pylint: disable=no-member
 
     if isinstance(data, CombinedCmrxReconSliceDataset):
@@ -57,16 +67,31 @@ def worker_init_fn(worker_id):
                         + worker_info.id * len(data.datasets)
                         + i
                     )
+                # Modulo keeps the seed accepted by NumPy RandomState.
                 dataset.transform.mask_func.rng.seed(seed_i % (2**32 - 1))
     elif data.transform.mask_func is not None:
         if is_ddp:  # DDP training: unique seed is determined by worker and device
             seed = base_seed + torch.distributed.get_rank() * worker_info.num_workers
         else:
             seed = base_seed
+        # Modulo keeps the seed accepted by NumPy RandomState.
         data.transform.mask_func.rng.seed(seed % (2**32 - 1))
 
 
 def _check_both_not_none(val1, val2):
+    """
+    Check whether two mutually exclusive sampling options are both set.
+
+    This helper is used to reject configurations that specify both slice-level
+    sampling and volume-level sampling for the same split.
+
+    Args:
+        val1: First optional value.
+        val2: Second optional value.
+
+    Returns:
+        ``True`` when both values are not ``None``; otherwise ``False``.
+    """
     if (val1 is not None) and (val2 is not None):
         return True
 
@@ -75,10 +100,12 @@ def _check_both_not_none(val1, val2):
 
 class CmrxReconDataModule(pl.LightningDataModule):
     """
-    Data module class for fastMRI data sets.
+    Lightning DataModule for CMRxRecon-style fastMRI datasets.
 
-    This class handles configurations for training on fastMRI data. It is set
-    up to process configurations independently of training modules.
+    This class owns split-specific transforms, optional slice/volume sampling,
+    metadata cache warm-up, DataLoader construction, and distributed sampler
+    setup. The configured root is derived from ``data_path / "Cine" /
+    "TrainingSet" / h5py_folder`` and passed to the CMRxRecon slice datasets.
 
     Note that subsampling mask and transform configurations are expected to be
     done by the main client training scripts and passed into this data module.
@@ -117,6 +144,8 @@ class CmrxReconDataModule(pl.LightningDataModule):
             data_path: Path to root data directory. For example, if knee/path
                 is the root directory with subdirectories multicoil_train and
                 multicoil_val, you would input knee/path for data_path.
+            h5py_folder: Folder name under ``Cine/TrainingSet`` containing the
+                converted HDF5 files.
             challenge: Name of challenge from ('multicoil', 'singlecoil').
             train_transform: A transform object for the training split.
             val_transform: A transform object for the validation split.
@@ -156,6 +185,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
         """
         super().__init__()
 
+        # Each split may sample by slices or by volumes, but not both.
         if _check_both_not_none(sample_rate, volume_sample_rate):
             raise ValueError("Can set sample_rate or volume_sample_rate, but not both.")
         if _check_both_not_none(val_sample_rate, val_volume_sample_rate):
@@ -167,6 +197,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
                 "Can set test_sample_rate or test_volume_sample_rate, but not both."
             )
         # TODO: Easy working code, other mapping/aorta/mapping/... data will be loaded in CmrxReconSliceDataset
+        # Current CMRxRecon root convention starts from the Cine training HDF5 folder.
         self.data_path = data_path / 'Cine' / 'TrainingSet' / h5py_folder  # Need to be checked sometimes
         self.challenge = challenge
         self.train_transform = train_transform
@@ -196,8 +227,23 @@ class CmrxReconDataModule(pl.LightningDataModule):
         sample_rate: Optional[float] = None,
         volume_sample_rate: Optional[float] = None,
     ) -> torch.utils.data.DataLoader:
+        """
+        Create a DataLoader for a train, validation, or test partition.
+
+        Args:
+            data_transform: Transform applied by the dataset for this split.
+            data_partition: Split name, usually ``"train"``, ``"val"``,
+                ``"test"``, or ``"challenge"``.
+            sample_rate: Optional override for slice-level sampling.
+            volume_sample_rate: Optional override for volume-level sampling.
+
+        Returns:
+            PyTorch DataLoader wrapping either ``CmrxReconSliceDataset`` or
+            ``CombinedCmrxReconSliceDataset``.
+        """
         if data_partition == "train":
             is_train = True
+            # Training uses train-specific sampling and raw-sample filters.
             sample_rate = self.sample_rate if sample_rate is None else sample_rate
             volume_sample_rate = (
                 self.volume_sample_rate
@@ -208,6 +254,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
         else:
             is_train = False
             if data_partition == "val":
+                # Validation uses its own sampling/filter configuration.
                 sample_rate = (
                     self.val_sample_rate if sample_rate is None else sample_rate
                 )
@@ -218,6 +265,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
                 )
                 raw_sample_filter = self.val_filter
             elif data_partition == "test":
+                # Test uses its own sampling/filter configuration.
                 sample_rate = (
                     self.test_sample_rate if sample_rate is None else sample_rate
                 )
@@ -228,7 +276,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
                 )
                 raw_sample_filter = self.test_filter
 
-        # if desired, combine train and val together for the train split
+        # If desired, combine train and val together for leaderboard-style training.
         dataset: Union[CmrxReconSliceDataset, CombinedCmrxReconSliceDataset]
         if is_train and self.combine_train_val:  # TODO: Dataset for training !!! Need to be modified if needed !!!
             data_paths = [
@@ -253,6 +301,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
             )
         else:
             if data_partition in ("test", "challenge") and self.test_path is not None:
+                # Explicit test_path overrides the split-derived path.
                 data_path = self.test_path
             else:  # TODO: Dataset for validation !!! Need to be modified if needed !!!
                 data_path = self.data_path / data_partition #"val" 
@@ -274,6 +323,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
             if is_train:
                 sampler = torch.utils.data.DistributedSampler(dataset)
             else:
+                # VolumeSampler keeps full volumes on the same process during eval.
                 sampler = fastmri.data.VolumeSampler(dataset, shuffle=False)
 
         dataloader = torch.utils.data.DataLoader(
@@ -282,12 +332,20 @@ class CmrxReconDataModule(pl.LightningDataModule):
             num_workers= self.num_workers,
             worker_init_fn=worker_init_fn,
             sampler=sampler,
+            # When a sampler is provided, it controls ordering, so DataLoader shuffle is disabled.
             shuffle=is_train if sampler is None else False,
         )
 
         return dataloader
     
     def prepare_data(self):
+        """
+        Warm up dataset metadata caches before distributed training starts.
+
+        Lightning calls this hook on the rank-zero process. Instantiating each
+        split dataset once is enough to populate the cache file when dataset
+        caching is enabled; no samples are consumed here.
+        """
         # call dataset for each split one time to make sure the cache is set up on the
         # rank 0 ddp process. if not using cache, don't do this
         if self.use_dataset_cache_file:
@@ -311,6 +369,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
                 # NOTE: Fixed so that val and test use correct sample rates
                 sample_rate = self.sample_rate  # if i == 0 else 1.0
                 volume_sample_rate = self.volume_sample_rate  # if i == 0 else None
+                # Dataset construction triggers cache generation/loading as a side effect.
                 _ = CmrxReconSliceDataset(
                     root=data_path,
                     transform=data_transform,
@@ -321,12 +380,15 @@ class CmrxReconDataModule(pl.LightningDataModule):
                 )
 
     def train_dataloader(self):
+        """Return the training DataLoader with the training transform."""
         return self._create_data_loader(self.train_transform, data_partition="train")
 
     def val_dataloader(self):
+        """Return the validation DataLoader with the validation transform."""
         return self._create_data_loader(self.val_transform, data_partition="val")
 
     def test_dataloader(self):
+        """Return the test/challenge DataLoader with the test transform."""
         return self._create_data_loader(
             self.test_transform, data_partition=self.test_split
         )
@@ -334,11 +396,11 @@ class CmrxReconDataModule(pl.LightningDataModule):
     @staticmethod
     def add_data_specific_args(parent_parser):  # pragma: no-cover
         """
-        Define parameters that only apply to this model
+        Define CLI arguments for data paths, sampling, caching, and DataLoaders.
         """
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
 
-        # dataset arguments
+        # dataset arguments: root paths, split selection, and sampling controls
         parser.add_argument(
             "--data_path",
             default=None,
@@ -437,7 +499,7 @@ class CmrxReconDataModule(pl.LightningDataModule):
             help="Whether to combine train and val splits for training",
         )
 
-        # data loader arguments
+        # data loader arguments: batch size and worker count
         parser.add_argument(
             "--batch_size", default=1, type=int, help="Data loader batch size"
         )

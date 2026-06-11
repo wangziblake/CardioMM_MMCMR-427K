@@ -1,5 +1,11 @@
 """
-Segment reconstructed gt sos .nii.gz images for subsequent analysis using nnunetv2 - pytorch - CMRxReconAll
+Segment reconstructed GT SOS NIfTI images with nnUNetv2 for downstream analysis.
+
+This script prepares CMRxReconAll 4D Cine image volumes for nnUNetv2 inference
+by splitting each volume into per-slice/per-time-frame 2D NIfTI inputs. It then
+runs the view-specific nnUNet models and reassembles the predicted 2D labels
+back into 4D segmentation volumes that match the original image geometry.
+
 Created on 2025/07/10
 @author: Zi Wang
 Email: Zi Wang (zi.wang@imperial.ac.uk)
@@ -15,6 +21,8 @@ from concurrent.futures import ProcessPoolExecutor
 import shutil
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
+# nnUNet workspace configuration. These environment variables are read by the
+# nnUNetv2 command-line tools.
 WORKSPACE_DIR = '../nnUNet_related'  # TODO: need to check when using in different servers
 
 os.environ['nnUNet_raw'] = os.path.join(WORKSPACE_DIR, 'nnUNet_raw')
@@ -25,6 +33,7 @@ GPU_num = '0'
 os.environ['CUDA_VISIBLE_DEVICES'] = GPU_num
 device = 'cuda' if os.environ.get('CUDA_VISIBLE_DEVICES') else 'cpu'
 
+# Each cardiac view is paired with the corresponding nnUNet dataset ID.
 view_names = ['sax', '2ch', '3ch', '4ch']
 model_ds = ['100', '101', '102', '103']  # matches view_names
 
@@ -33,6 +42,19 @@ max_workers = 5  # adjust to number of parallel processes you want
 
 # ─── Per-case processing ──────────────────────────────────────────────────────
 def process_case(fdir):
+    """Run nnUNet segmentation for all eligible 4D NIfTI files in one case.
+
+    The function creates temporary 2D nnUNet input folders, runs the
+    view-specific nnUNetv2 predictors, and reassembles predicted 2D labels into
+    4D segmentation files saved under the matching ``SegNII`` directory.
+
+    Args:
+        fdir (str): Directory containing the source 4D image NIfTI files for
+            one case.
+
+    Returns:
+        None: Segmentation files are written to disk.
+    """
     try:
         # --- prepare dirs ---
         caseinputdir = fdir.replace('ImageNII', 'Inputs')  # Image2Dtemp for nnunet
@@ -49,6 +71,8 @@ def process_case(fdir):
             view_in = os.path.join(caseinputdir, view)
             os.makedirs(view_in, exist_ok=True)
 
+            # Select files for the current anatomical view before converting
+            # each 4D volume into nnUNet's 2D input naming convention.
             matched = [f for f in files if view in f]
             print(f"Processing {fdir} for view {view}, found {len(matched)} files")
             for fn in matched:
@@ -64,6 +88,9 @@ def process_case(fdir):
                 if os.path.exists(os.path.join(view_in, f"{prefix}__z0__t0_0000.nii.gz")):
                     print(f"{fdir} already done, skipping")
                 else:
+                    # nnUNet 2D inference expects one spatial slice per file.
+                    # The channel suffix ``_0000`` denotes the first image
+                    # channel.
                     for z in range(data.shape[-2]):
                         for t in range(data.shape[-1]):
                             vol = data[:, :, z, t]
@@ -75,7 +102,8 @@ def process_case(fdir):
             # --- run prediction if needed ---
             view_out = os.path.join(outputdir, view)
             os.makedirs(view_out, exist_ok=True)
-            # skip if already done (allowing for 3 auxiliary files)
+            # Skip if prediction outputs already appear complete. The +3 allows
+            # for nnUNet auxiliary files written into the output directory.
             if len(os.listdir(view_in)) + 3 == len(os.listdir(view_out)):
                 print(f"{fdir} already done, skipping")
             else:
@@ -102,6 +130,8 @@ def process_case(fdir):
                 if os.path.exists(os.path.join(segcasedir, prefix + '_label.nii.gz')):
                     print(f"{fdir} already done for {prefix}, skipping")
                 else:
+                    # Group all 2D predictions belonging to the same original
+                    # 4D image and sort them in deterministic z-then-t order.
                     parts = [f for f in preds if f.startswith(prefix+'__')]
                     parts.sort(key=lambda x: (
                         int(x.split('__')[1][1:]),  # get z from __z{z}
@@ -114,6 +144,8 @@ def process_case(fdir):
                     sample_img = nib.load(os.path.join(view_out, parts[0]))  # load first image to get shape and dtype
                     data_shape = sample_img.shape  # 3D shape
 
+                    # Reassemble the predicted labels into the original
+                    # ``(nx, ny, nz, nt)`` layout.
                     label4d = np.zeros((data_shape[0], data_shape[1], len(z_list), len(t_list)), dtype=sample_img.get_data_dtype())
                     for f in parts:
                         z = int(f.split('__')[1][1:])
@@ -124,7 +156,8 @@ def process_case(fdir):
                     # Save .nii.gz
                     img4d = nib.load(os.path.join(caseniidir, prefix + '.nii.gz'))
                     seg4d = nib.Nifti1Image(label4d, img4d.affine, img4d.header)
-                    # if the label4d.shape and img4d.get_fdata().shape are not the same, raise an error
+                    # Preserve the original image geometry only when the
+                    # reconstructed label shape matches the source image shape.
                     if label4d.shape == img4d.get_fdata().shape:
                         nib.save(seg4d, os.path.join(segcasedir, prefix + '_label.nii.gz'))
                     else:
@@ -143,6 +176,8 @@ if __name__ == "__main__":
 
     EXCLUDED_KEYWORDS = ['Center010', 'Center007', 'Center012', '055T', '50T']  # Exclude specific centers (pediatric) or scanners (low/ultra high-field)
 
+    # Map each supported modality to the source image filename pattern used for
+    # recursive discovery. Only the selected modality is populated below.
     modalities = {
         'Cine': 'cine*.nii.gz',
     }
@@ -150,6 +185,8 @@ if __name__ == "__main__":
 
     for modal, pattern in modalities.items():
         if modality == modal:
+            # Keep only GT SOS NIfTI files from the requested evaluation split,
+            # while excluding centres/scanners that should not enter this run.
             file_dict[modal] = sorted([
                 file for file in glob.glob(os.path.join(RootDir, f'**/{pattern}'), recursive=True)
                 if all(x in file for x in ['GTSOS_NII', modal, evaluate_set])
@@ -161,12 +198,15 @@ if __name__ == "__main__":
         print(f'{modal} files: {len(files)}')
     print(f'Total files: {len(f)}')
     print('##############')
+    # Process each case directory once, even if it contains multiple view files.
     fdir = sorted(set(os.path.dirname(p) for p in f))
 
+    # Run independent case directories in parallel.
     with ProcessPoolExecutor(max_workers=max_workers) as pool:
         pool.map(process_case, fdir)
 
-    # Clean up temporary directories
+    # Clean up temporary 2D nnUNet input/output directories after all cases
+    # have been reassembled into final 4D segmentations.
     print("Cleaning up temporary directories...")
     Rootinputdir = RootDir.replace('ImageNII', 'Inputs')  # Root Image2Dtemp for nnunet
     Rootoutputdir = RootDir.replace('ImageNII', 'Outputs')  # Root Seg2Dtemp from nnunet

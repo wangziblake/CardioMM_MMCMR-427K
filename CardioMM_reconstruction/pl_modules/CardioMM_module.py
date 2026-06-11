@@ -24,8 +24,11 @@ from typing import List
 
 class CardioMM_Module(MriModule):
     """
-    Training module.
+    PyTorch Lightning/fastMRI training module for CardioMM reconstruction.
 
+    This wrapper combines the CardioMM_SEM reconstruction network, a frozen text
+    encoder for tokenized metadata and undersampling descriptions, two language
+    projection heads, and the fastMRI SSIM loss used for optimization.
     """
 
     def __init__(
@@ -84,6 +87,14 @@ class CardioMM_Module(MriModule):
             weight_decay: Parameter for penalizing weights norm.
             use_checkpoint: Whether to use checkpointing to trade compute for GPU memory.
             low_mem: Whether to compute sensitivity map coil by coil to save GPU memory.
+            llm_model_dim: Dimension of the frozen language-model output.
+            llm_embd_dim: Projected text embedding dimension passed into the
+                reconstruction network.
+            llm_nclasses: Number of auxiliary text-head classes. The auxiliary
+                logits are returned by the heads but not used in the reconstruction
+                loss in this module.
+            llm_model_name: Hugging Face model name or local path used by the
+                frozen text encoder.
 
         """
         super().__init__(**kwargs)
@@ -143,31 +154,65 @@ class CardioMM_Module(MriModule):
             llm_embd_dim = self.llm_embd_dim,
         )
 
-        # text_model for metadata and undersampling embadding
+        # Frozen text model for metadata and undersampling embadding.
         self.language_model_no = LanguageModel_NoAutoTokenizer(llm_model_name=self.llm_model_name)
+        # Separate heads let metadata and undersampling prompts learn independent projections.
         self.lm_head_meta = LMHead(llm_model_dim=self.llm_model_dim, llm_embd_dim=self.llm_embd_dim, llm_nclasses=self.llm_nclasses)
         self.lm_head_us = LMHead2(llm_model_dim=self.llm_model_dim, llm_embd_dim=self.llm_embd_dim, llm_nclasses=self.llm_nclasses)
         self.loss = fastmri.SSIMLoss()
 
     def forward(self, masked_kspace, mask, num_low_frequencies, metadata, usdata, mask_type):
+        """
+        Run text-conditioned CardioMM reconstruction.
+
+        Args:
+            masked_kspace: Undersampled multi-coil k-space tensor from the batch.
+            mask: Boolean sampling mask applied to ``masked_kspace``.
+            num_low_frequencies: Number of low-frequency samples in the mask.
+            metadata: Tokenized metadata text dictionary with keys such as
+                ``input_ids``, ``attention_mask``, and optionally
+                ``token_type_ids``.
+            usdata: Tokenized undersampling-description text dictionary with the
+                same tokenizer-output structure as ``metadata``.
+            mask_type: Undersampling family, for example ``"uniform"``,
+                ``"random"``, or ``"radial"``.
+
+        Returns:
+            Reconstructed image tensor produced by ``CardioMM_SEM``.
+        """
+        # Remove singleton DataLoader dimensions before feeding tokenizer outputs to the encoder.
         for key in ['input_ids', 'attention_mask', 'token_type_ids']:
             if key in metadata:
                 metadata[key] = metadata[key].squeeze(0)
             if key in usdata:
                 usdata[key] = usdata[key].squeeze(0)
 
+        # Use the same frozen language model for acquisition metadata and undersampling text.
         metadata = self.language_model_no(metadata).unsqueeze(0)
         usdata = self.language_model_no(usdata).unsqueeze(0)
         
+        # Project text embeddings into the dimensions expected by the reconstruction network.
         lm_embd_adapt, _ = self.lm_head_meta(metadata)  # meta text embadding after projection in MRI reconstruction tasks
         lm_embd_adapt2, _ = self.lm_head_us(usdata)  # us text embadding after projection in MRI reconstruction tasks
         out = self.metausunetlight(masked_kspace, mask, num_low_frequencies, lm_embd_adapt, lm_embd_adapt2, mask_type)
         return out
 
     def training_step(self, batch, batch_idx):
+        """
+        Execute one training step and log SSIM reconstruction loss.
+
+        Args:
+            batch: CardioMM batch containing k-space, mask, text-token inputs,
+                target image, and image scaling metadata.
+            batch_idx: Index of the current training batch.
+
+        Returns:
+            SSIM loss tensor used for backpropagation.
+        """
         output = self(batch.masked_kspace, batch.mask,
                       batch.num_low_frequencies, batch.metadata, batch.usdata, batch.mask_type)  # use forward process through __call__
 
+        # Crop target and prediction to their common spatial support before SSIM loss.
         target, output = transforms.center_crop_to_smallest(
             batch.target, output)
         loss = self.loss(
@@ -175,6 +220,7 @@ class CardioMM_Module(MriModule):
         )
 
         if torch.isnan(loss):
+            # Stop immediately and report the filename if training produces NaN loss.
             print(f"loss nan, bad file: {batch.fname}")
             import sys
             sys.exit(1)
@@ -184,9 +230,21 @@ class CardioMM_Module(MriModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        """
+        Execute one validation step and return data needed by validation metrics.
+
+        Args:
+            batch: CardioMM validation batch.
+            batch_idx: Index of the current validation batch.
+
+        Returns:
+            Dictionary containing identifiers, cropped output/target tensors, and
+            validation SSIM loss.
+        """
         output = self.forward(
             batch.masked_kspace, batch.mask, batch.num_low_frequencies, batch.metadata, batch.usdata, batch.mask_type
         )
+        # Validation metrics compare target and output on the same crop size.
         target, output = transforms.center_crop_to_smallest(
             batch.target, output)
 
@@ -203,10 +261,21 @@ class CardioMM_Module(MriModule):
         }
 
     def test_step(self, batch, batch_idx):
+        """
+        Execute one test step and return a cropped NumPy reconstruction.
+
+        Args:
+            batch: CardioMM test batch.
+            batch_idx: Index of the current test batch.
+
+        Returns:
+            Dictionary containing filename, slice index, and reconstructed output
+            as a CPU NumPy array.
+        """
         output = self(batch.masked_kspace, batch.mask,
                       batch.num_low_frequencies, batch.metadata, batch.usdata, batch.mask_type)  # use forward process through __call__
 
-        # check for FLAIR 203
+        # Keep crop size valid when the model output is narrower than requested.
         if output.shape[-1] < batch.crop_size[1]:
             crop_size = (output.shape[-1], output.shape[-1])
         else:
@@ -221,9 +290,18 @@ class CardioMM_Module(MriModule):
         }
 
     def configure_optimizers(self):
+        """
+        Configure optimizer and learning-rate scheduler for Lightning.
+
+        Returns:
+            Pair of lists ``([optimizer], [scheduler])`` containing AdamW and a
+            StepLR scheduler.
+        """
+        # AdamW applies the configured learning rate and weight decay to all module parameters.
         optim = torch.optim.AdamW(
             self.parameters(), lr=self.lr, weight_decay=self.weight_decay
         )
+        # StepLR decays the learning rate every ``lr_step_size`` epochs.
         scheduler = torch.optim.lr_scheduler.StepLR(
             optim, self.lr_step_size, self.lr_gamma
         )
@@ -251,7 +329,7 @@ class CardioMM_Module(MriModule):
 
         # param overwrites
 
-        # network params
+        # network params: reconstruction depth, adjacent slices, and feature widths
         parser.add_argument(
             "--num_cascades",
             default=12,
@@ -353,7 +431,7 @@ class CardioMM_Module(MriModule):
             help="not using channel attention",
         )
 
-        # training params (opt)
+        # training params (opt): optimizer and scheduler configuration
         parser.add_argument(
             "--lr", default=0.0003, type=float, help="Adam learning rate"
         )
@@ -382,6 +460,7 @@ class CardioMM_Module(MriModule):
             "--low_mem", action="store_true", help="consume less memory by computing sens_map coil by coil (default: False)"
         )
 
+        # language-model params: frozen text encoder and projection-head dimensions
         parser.add_argument(
             "--llm_model_dim",
             default=384,

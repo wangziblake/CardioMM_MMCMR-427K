@@ -20,6 +20,7 @@ import sys
 import pathlib
 from argparse import ArgumentParser
 
+# Make repository-local modules importable when this script is launched from the nested train_cmr folder.
 sys.path.insert(0, os.path.dirname(os.path.dirname(pathlib.Path(__file__).parent.absolute())))
 
 from data.transforms_metausv3 import CardioMMDataTransform
@@ -32,18 +33,32 @@ from packaging import version
 
 
 def cli_main(args):
+    """
+    Build runtime objects and launch CardioMM training or testing.
+
+    This function seeds the run, creates the undersampling mask and data
+    transforms, constructs the Lightning DataModule and CardioMM model, then
+    dispatches to ``trainer.fit`` or ``trainer.test`` according to ``args.mode``.
+
+    Args:
+        args: Parsed command-line arguments from ``build_args``.
+    """
+    # Seed Lightning/PyTorch/NumPy-style randomness where supported by Lightning.
     pl.seed_everything(args.seed)
 
     # ------------
     # data
     # ------------
     # this creates a k-space mask for transforming input data
+    # Fixed-ACS masks use center_numbers and accelerations configured by the CLI.
     mask = create_mask_for_mask_type(
         args.mask_type, None, args.accelerations, args.center_numbers
     )
     # use equispaced_fixed masks for train transform, fixed masks for val transform
+    # Training masks are not filename-seeded, while validation masks are deterministic per filename by default.
     train_transform = CardioMMDataTransform(mask_func=mask, llm_model_name=args.llm_model_name, use_seed=False)
     val_transform = CardioMMDataTransform(mask_func=mask, llm_model_name=args.llm_model_name)
+    # Test transform without a mask_func uses dataset-provided masks/fallback behavior.
     test_transform = CardioMMDataTransform()
     # ptl data module - this handles data loaders
     data_module = CmrxReconDataModule(
@@ -59,6 +74,7 @@ def cli_main(args):
         sample_rate=args.sample_rate,
         batch_size=args.batch_size,
         num_workers=args.nworkers,  # default=0
+        # DDP strategies need distributed/volume-aware sampling in the DataModule.
         distributed_sampler=(args.strategy in (
             "ddp_find_unused_parameters_false", "ddp", "ddp_cpu")),
     )
@@ -66,6 +82,7 @@ def cli_main(args):
     # ------------
     # model
     # ------------
+    # Avoid tokenizer worker parallelism warnings/contention during Lightning training.
     os.environ["TOKENIZERS_PARALLELISM"] = "false"  # Disable parallelism
     model = CardioMM_Module(
         num_cascades=args.num_cascades,
@@ -109,6 +126,17 @@ def cli_main(args):
 
 
 def build_args():
+    """
+    Build and parse all command-line arguments for CardioMM training.
+
+    The parser combines script-level options, data-module options,
+    CardioMM-module options, and PyTorch Lightning Trainer options. It also
+    configures experiment output folders, TensorBoard/CSV loggers, checkpointing,
+    and automatic resume from the latest checkpoint if available.
+
+    Returns:
+        Parsed argument namespace ready for ``cli_main``.
+    """
     parser = ArgumentParser()
 
     # basic args
@@ -182,6 +210,7 @@ def build_args():
 
     # data config with path to fastMRI data and batch size
     parser = CmrxReconDataModule.add_data_specific_args(parser)
+    # Override selected DataModule defaults for this training script.
     parser.set_defaults(
         data_path=data_path,  # path to fastMRI data
         mask_type="equispaced_fraction",  # VarNet uses equispaced mask
@@ -192,6 +221,7 @@ def build_args():
 
     # module+text config
     parser = CardioMM_Module.add_model_specific_args(parser)
+    # Override selected model defaults for this CardioMM experiment.
     parser.set_defaults(
         num_cascades=12,  # number of unrolled iterations
         num_adj_slices=1,  # number of adjacent slices
@@ -219,6 +249,7 @@ def build_args():
         use_checkpoint=False,  # use checkpointing for GPU memory savings
 
         # text module config
+        # CLIP text encoders output 512-dimensional embeddings before projection.
         llm_model_dim=512,  # llm model dim, CLIP text encoder should be 512
         llm_embd_dim=256,  # llm embadding dim
         llm_nclasses=3,  # no use in our reconstruction task, or can be equalled to the number of undersampling patterns
@@ -226,6 +257,7 @@ def build_args():
 
     # trainer config
     parser = pl.Trainer.add_argparse_args(parser)
+    # Override selected Lightning Trainer defaults for this script.
     parser.set_defaults(
         # gpus=num_gpus,  # number of gpus to use
         replace_sampler_ddp=False,  # this is necessary for volume dispatch during val
@@ -238,14 +270,17 @@ def build_args():
     )
 
     args = parser.parse_args()
+    # Keep compatibility with Lightning versions that read the ``gpus`` argument.
     args.gpus = args.num_gpus  # override pl.Trainer gpus arg
     pattern_folder = args.mask_type
     acc_folder = "acc_" + "_".join(map(str, args.accelerations))
+    # Store logs/checkpoints under h5 folder, experiment name, mask family, and acceleration.
     args.default_root_dir = default_root_dir / args.h5py_folder / args.exp_name / pattern_folder / acc_folder
 
     # logger
     logger1 = TensorBoardLogger(save_dir=args.default_root_dir, name="lightning_logs", version=None)
     logger2 = CSVLogger(save_dir=args.default_root_dir, name="lightning_logs_csv", version=None)
+    # Lightning >=1.6 accepts a list of loggers; older versions expect a single logger.
     if version.parse(pl.__version__) >= version.parse("1.6.0"):
         args.logger = [logger1, logger2]
     else:
@@ -254,6 +289,7 @@ def build_args():
     # configure checkpointing in checkpoint_dir
     checkpoint_dir = args.default_root_dir / "checkpoints"
     if not checkpoint_dir.exists():
+        # Ensure checkpoint directory exists before ModelCheckpoint writes files.
         checkpoint_dir.mkdir(parents=True)
 
     args.callbacks = [
@@ -261,6 +297,7 @@ def build_args():
             dirpath=args.default_root_dir / "checkpoints",
             save_top_k=5,
             verbose=True,
+            # Keep the five best checkpoints according to validation loss.
             monitor="validation_loss",
             mode="min",
         )
@@ -270,12 +307,16 @@ def build_args():
     if args.resume_from_checkpoint is None:
         ckpt_list = sorted(checkpoint_dir.glob("*.ckpt"), key=os.path.getmtime)
         if ckpt_list:
+            # Resume from the most recently modified checkpoint in this experiment folder.
             args.resume_from_checkpoint = str(ckpt_list[-1])
 
     return args
 
 
 def run_cli():
+    """
+    Parse command-line arguments and launch the requested run mode.
+    """
     args = build_args()
 
     # ---------------------
@@ -286,6 +327,7 @@ def run_cli():
 
 if __name__ == "__main__":
     import warnings
+    # Suppress warning noise in script runs and print cwd for path/debug visibility.
     warnings.filterwarnings("ignore")
     print(os.getcwd())
 

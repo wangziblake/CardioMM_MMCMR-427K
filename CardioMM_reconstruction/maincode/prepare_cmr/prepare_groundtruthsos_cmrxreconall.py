@@ -9,6 +9,7 @@ If you want to use this code, please cite our relevant papers in the GitHub page
 import os
 import sys
 import pathlib
+# Make repository-local modules importable when launching from the nested prepare_cmr folder.
 sys.path.insert(0, os.path.dirname(os.path.dirname(pathlib.Path(__file__).parent.absolute())))
 
 import argparse
@@ -21,22 +22,45 @@ from utils import zf_recon_4D5D_cpu
 
 
 def GTpredict(f, center_crop=False, input_dir='', output_dir='', plot_image=False):
+    """
+    Generate and save ground-truth SOS images for a list of FullSample files.
+
+    Args:
+        f: List of input ``FullSample`` MATLAB files.
+        center_crop: Compatibility flag retained in the signature; currently unused.
+        input_dir: Input root to replace when deriving output paths.
+        output_dir: Output root where ``GTSOS`` files are saved.
+        plot_image: Compatibility flag retained in the signature; currently unused.
+
+    Saves:
+        MATLAB ``.mat`` files containing ``{"gtsosimage": sosimage_savemat}``.
+        Input arrays from ``zf_recon_4D5D_cpu`` may be shaped
+        ``[nt, nz, ny, nx]``, ``[nz, ny, nx]``, or ``[ny, nx]`` and are
+        transposed to MATLAB-style ``[nx, ny, nz, nt]``, ``[nx, ny, nz]``, or
+        ``[nx, ny]`` before saving.
+    """
     # 1. predict
     for ff in tqdm(f, desc='files'):
         print('-- processing --', ff)
+        # Mirror the input tree while replacing FullSample files with GTSOS outputs.
         save_path = ff.replace('FullSample', 'GTSOS').replace(input_dir, output_dir)
         if os.path.isfile(save_path):  # check if the .mat file already exists
             continue
         elif not os.path.isdir(os.path.dirname(save_path)):
+            # Create the destination directory that mirrors the source hierarchy.
             os.makedirs(os.path.dirname(save_path))
+        # Direct IFFT + root-sum-of-squares reconstruction on CPU.
         _, sosimage = zf_recon_4D5D_cpu(ff)  # image: [nt,nz,ny,nx] or [nz,ny,nx] or [ny,nx]
         # print(f"{sosimage.shape}")
 
         if sosimage.ndim == 4:
+            # Convert from Python layout [nt, nz, ny, nx] to MATLAB layout [nx, ny, nz, nt].
             sosimage_savemat = sosimage.transpose(3, 2, 1, 0)  # nx, ny, nz, nt
         elif sosimage.ndim == 3:
+            # Convert from Python layout [nz, ny, nx] to MATLAB layout [nx, ny, nz].
             sosimage_savemat = sosimage.transpose(2, 1, 0)  # nx, ny, nz
         else:
+            # Convert from Python layout [ny, nx] to MATLAB layout [nx, ny].
             sosimage_savemat = sosimage.transpose(1, 0)  # nx, ny
         sio.savemat(save_path, {'gtsosimage': sosimage_savemat})
         print('-- saving --', save_path)
@@ -68,6 +92,7 @@ if __name__ == '__main__':
     print("Output data store in:", output_dir)
 
     if exact_filename is not None:
+        # Exact filename mode bypasses modality glob discovery.
         f = [exact_filename]
         print('##############')
         print("Exact recon filename:", exact_filename)
@@ -94,6 +119,7 @@ if __name__ == '__main__':
 
         for modal, pattern in modalities.items():
             if modality == modal or modality == 'All':
+                # Keep only FullSample files matching modality and evaluation split.
                 file_dict[modal] = sorted([
                     file for file in glob.glob(join(input_dir, f'**/{pattern}'), recursive=True)
                     if all(x in file for x in ['FullSample', modal, evaluate_set])
