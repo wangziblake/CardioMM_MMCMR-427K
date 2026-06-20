@@ -69,7 +69,7 @@ Run the main code for training subset re-organization, follow:
 ```
 /CardioMM_reconstruction/preparescript_CMRxReconAll.sh
 ```
-Run the main code for testing subset undersampling, run MATLAB script (original) or a Python script (re-implementation):
+Run the main code for test subset undersampling, run MATLAB script (original) or a Python script (re-implementation):
 ```
 /CardioMM_dataundersampling/MATLAB_Original_Version/MaskGeneration_TestAnalysisSet_Fast.m
 or
