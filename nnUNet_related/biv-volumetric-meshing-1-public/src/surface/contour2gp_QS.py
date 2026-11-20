@@ -1297,7 +1297,6 @@ def main():
     instance_ids = [f"Instance_{args.instance}"]
 
     # # if you want to test specific subjects instead of all subjects in the data dir, uncomment this
-    # subject_ids = ['UKBB_88878_1150922']
 
     for subject_id in subject_ids:
         logger.info(f" Processing subject {subject_id}...")
